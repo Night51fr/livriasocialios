@@ -169,11 +169,11 @@ public final class LivriaSocialAPIClient {
     public func discoverCrossAppAccount() async -> SocialCrossAppAccount? {
         let items = [URLQueryItem(name: "currentApp", value: "Livria Social")]
         if let res: SocialCrossAppDiscoverResponse = try? await getJSON("/sso/discover", queryItems: items),
-           res.hasAccount, let account = res.account {
+           res.hasDetectedAccount, let account = res.account {
             return account
         }
         if let resStore: SocialCrossAppDiscoverResponse = try? await getJSON("\(storeBaseAPI)/sso/discover", queryItems: items),
-           resStore.hasAccount, let account = resStore.account {
+           resStore.hasDetectedAccount, let account = resStore.account {
             return account
         }
         return nil
@@ -181,6 +181,7 @@ public final class LivriaSocialAPIClient {
 
     public func announceCrossAppSession(userId: Int, email: String) async {
         let payload: [String: Any] = [
+            "sourceApp": "Livria Social",
             "appName": "Livria Social",
             "userId": userId,
             "email": email
@@ -190,7 +191,10 @@ public final class LivriaSocialAPIClient {
     }
 
     public func clearCrossAppSession() async {
-        let payload: [String: Any] = ["appName": "Livria Social"]
+        let payload: [String: Any] = [
+            "sourceApp": "Livria Social",
+            "appName": "Livria Social"
+        ]
         _ = try? await postRaw("/sso/clear", body: payload)
         _ = try? await postRaw("\(storeBaseAPI)/sso/clear", body: payload)
     }
