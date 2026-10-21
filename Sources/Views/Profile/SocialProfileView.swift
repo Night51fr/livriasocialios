@@ -18,6 +18,7 @@ public struct SocialProfileView: View {
     @State private var cardStyle: String = "glass"
     @State private var cardOpacity: Double = 85
     @State private var didLoadInitialForm: Bool = false
+    @State private var showingDeleteAccountConfirmation: Bool = false
 
     private let accentChoices = ["#8b5cf6", "#ec4899", "#06b6d4", "#f59e0b", "#10b981", "#ef4444"]
 
@@ -49,6 +50,16 @@ public struct SocialProfileView: View {
             }
             .onChange(of: social.currentUser?.id) { _, _ in
                 syncFormWithUser()
+            }
+            .alert("Êtes-vous sûr de vouloir supprimer votre compte Viple Live ID ?", isPresented: $showingDeleteAccountConfirmation) {
+                Button("Annuler", role: .cancel) {}
+                Button("Oui, supprimer définitivement", role: .destructive) {
+                    Task {
+                        _ = await social.deleteVipleAccount()
+                    }
+                }
+            } message: {
+                Text("Êtes-vous sûr de vouloir supprimer définitivement votre compte Viple Live ID ? Cette action est irréversible et entraînera la suppression de votre profil et de vos données sur Livria et Viple Live ID.")
             }
         }
     }
@@ -272,6 +283,28 @@ public struct SocialProfileView: View {
                 .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
             }
             .buttonStyle(.plain)
+
+            if social.isAuthenticated {
+                Button(role: .destructive) {
+                    showingDeleteAccountConfirmation = true
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: "trash.fill")
+                            .foregroundStyle(Color(hex: "#FCA5A5"))
+                        Text("Supprimer mon compte Viple Live ID")
+                            .font(.system(size: 12.5, weight: .bold))
+                            .foregroundStyle(Color(hex: "#FCA5A5"))
+                        Spacer()
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(Color(hex: "#FCA5A5"))
+                    }
+                    .padding(11)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.red.opacity(0.18)))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.red.opacity(0.45), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(15)
         .socialCard(opacity: cardOpacity / 100.0)

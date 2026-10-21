@@ -13,6 +13,10 @@ public final class LivriaSocialViewModel: ObservableObject {
     @Published public var activeToastMessage: String? = nil
     @Published public var isLoading: Bool = false
     @Published public var authErrorMessage: String? = nil
+    @Published public var applePasswordSetupNotice: String? = nil
+    @Published public var pendingAppleOnboardingUserId: Int? = nil
+    @Published public var pendingAppleFirstName: String = ""
+    @Published public var pendingAppleLastName: String = ""
 
     // Conditions Générales d'Utilisation (obligatoires au 1er lancement)
     @Published public var hasAcceptedTermsOfUse: Bool = false
@@ -189,12 +193,19 @@ public final class LivriaSocialViewModel: ObservableObject {
     public func signIn(email: String, password: String) async {
         isLoading = true
         authErrorMessage = nil
+        applePasswordSetupNotice = nil
         defer { isLoading = false }
         do {
             let res: SocialAuthResponse = try await LivriaSocialAPIClient.shared.postJSON("/auth/login", body: [
                 "email": email,
                 "password": password
             ])
+            if res.requiresApplePasswordSetup == true {
+                let msg = res.message ?? res.error ?? "Un lien pour créer votre mot de passe vient d'être envoyé sur votre boîte mail iCloud."
+                applePasswordSetupNotice = msg
+                showToast("Vérifiez votre boîte mail iCloud pour créer votre mot de passe.")
+                return
+            }
             guard res.ok, let user = res.user else {
                 authErrorMessage = res.error ?? "Identifiant Viple Live ID ou mot de passe incorrect."
                 return
@@ -210,6 +221,115 @@ public final class LivriaSocialViewModel: ObservableObject {
             await refreshBootstrap(email: user.email, userId: user.id)
         } catch {
             authErrorMessage = error.localizedDescription
+        }
+    }
+
+    public func handleSignInWithApple(
+        appleUserId: String,
+        email: String?,
+        firstName: String?,
+        lastName: String?,
+        identityToken: String?
+    ) async {
+        isLoading = true
+        authErrorMessage = nil
+        applePasswordSetupNotice = nil
+        defer { isLoading = false }
+        do {
+            let res: SocialAuthResponse = try await LivriaSocialAPIClient.shared.postJSON("/auth/apple", body: [
+                "appleUserId": appleUserId,
+                "email": email ?? "",
+                "firstName": firstName ?? "",
+                "lastName": lastName ?? "",
+                "identityToken": identityToken ?? ""
+            ])
+            if res.requiresAppleOnboarding == true {
+                self.pendingAppleOnboardingUserId = res.appleOnboardingUserId
+                self.pendingAppleFirstName = res.appleFirstName ?? firstName ?? ""
+                self.pendingAppleLastName = res.appleLastName ?? lastName ?? ""
+                return
+            }
+            guard res.ok, let user = res.user else {
+                authErrorMessage = res.error ?? "Connexion avec Apple impossible."
+                return
+            }
+            self.pendingAppleOnboardingUserId = nil
+            self.currentUser = user
+            self.isAuthenticated = true
+            defaults.set(user.email, forKey: savedEmailKey)
+            defaults.set(user.id, forKey: savedUserIdKey)
+            defaults.set(res.token ?? "ls-token-\(user.id)", forKey: savedTokenKey)
+            syncLocalDailyLocks(userId: user.id)
+            isShowingAuthSheet = false
+            showToast("Connecté avec Apple (\(user.displayName)) !")
+            await refreshBootstrap(email: user.email, userId: user.id)
+        } catch {
+            authErrorMessage = error.localizedDescription
+        }
+    }
+
+    public func completeAppleOnboarding(
+        firstName: String,
+        lastName: String,
+        displayName: String,
+        viplemailUser: String
+    ) async {
+        guard let vipleUserId = pendingAppleOnboardingUserId else { return }
+        isLoading = true
+        authErrorMessage = nil
+        defer { isLoading = false }
+        do {
+            let res: SocialAuthResponse = try await LivriaSocialAPIClient.shared.postJSON("/auth/apple-complete", body: [
+                "vipleUserId": vipleUserId,
+                "firstName": firstName,
+                "lastName": lastName,
+                "displayName": displayName,
+                "viplemailUser": viplemailUser
+            ])
+            guard res.ok, let user = res.user else {
+                authErrorMessage = res.error ?? "Impossible de finaliser l'adresse @viplemail.fr."
+                return
+            }
+            self.pendingAppleOnboardingUserId = nil
+            self.currentUser = user
+            self.isAuthenticated = true
+            defaults.set(user.email, forKey: savedEmailKey)
+            defaults.set(user.id, forKey: savedUserIdKey)
+            defaults.set(res.token ?? "ls-token-\(user.id)", forKey: savedTokenKey)
+            syncLocalDailyLocks(userId: user.id)
+            isShowingAuthSheet = false
+            showToast("Compte Viple Live ID créé (\(user.email)) !")
+            await refreshBootstrap(email: user.email, userId: user.id)
+        } catch {
+            authErrorMessage = error.localizedDescription
+        }
+    }
+
+    public func deleteVipleAccount() async -> Bool {
+        isLoading = true
+        defer { isLoading = false }
+        do {
+            let res = try await LivriaSocialAPIClient.shared.postRaw("/auth/delete-account", body: authPayload)
+            let ok = (res["ok"] as? Bool) ?? false
+            if ok {
+                defaults.removeObject(forKey: savedEmailKey)
+                defaults.removeObject(forKey: savedUserIdKey)
+                defaults.removeObject(forKey: savedTokenKey)
+                currentUser = nil
+                isAuthenticated = false
+                posts = []
+                myLists = []
+                conversations = []
+                games = nil
+                showToast("Votre compte Viple Live ID a été définitivement supprimé.")
+                return true
+            } else {
+                showToast((res["error"] as? String) ?? "Impossible de supprimer le compte.")
+                return false
+            }
+        } catch {
+            showToast(error.localizedDescription)
+            return false
         }
     }
 
