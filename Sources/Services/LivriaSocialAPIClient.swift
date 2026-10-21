@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Client Réseau REST Natif « Livria Social » (store.livria.social • @MainActor pour Swift 6 Concurrency)
 
@@ -19,6 +22,19 @@ public final class LivriaSocialAPIClient {
         cfg.timeoutIntervalForResource = 20
         self.session = URLSession(configuration: cfg)
         self.decoder = JSONDecoder()
+    }
+
+    private func applyVipleDeviceHeaders(to req: inout URLRequest) {
+        req.setValue("Livria Social", forHTTPHeaderField: "X-Viple-App-Name")
+        #if canImport(UIKit)
+        if let vendorId = UIDevice.current.identifierForVendor?.uuidString, !vendorId.isEmpty {
+            req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
+        }
+        let dev = UIDevice.current
+        let bounds = UIScreen.main.bounds
+        let deviceSignature = "\(dev.model)|\(dev.systemName)-\(dev.systemVersion)|\(Int(bounds.width))x\(Int(bounds.height))"
+        req.setValue(deviceSignature, forHTTPHeaderField: "X-Viple-Device-Info")
+        #endif
     }
 
     private func performRequest(_ req: URLRequest) async throws -> (Data, HTTPURLResponse) {
@@ -85,6 +101,7 @@ public final class LivriaSocialAPIClient {
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaSocial-iOS/26.0 (Bundle/store.livria.social; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
+        applyVipleDeviceHeaders(to: &req)
 
         let (data, http) = try await performRequest(req)
         if !(200...299).contains(http.statusCode) {
@@ -111,6 +128,7 @@ public final class LivriaSocialAPIClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaSocial-iOS/26.0 (Bundle/store.livria.social; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
+        applyVipleDeviceHeaders(to: &req)
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, http) = try await performRequest(req)
@@ -134,6 +152,7 @@ public final class LivriaSocialAPIClient {
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaSocial-iOS/26.0 (Bundle/store.livria.social; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
+        applyVipleDeviceHeaders(to: &req)
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
         let (data, http) = try await performRequest(req)
@@ -143,6 +162,45 @@ public final class LivriaSocialAPIClient {
             throw NSError(domain: "LivriaSocialAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: msg])
         }
         return dict
+    }
+
+    // MARK: - Viple Live ID Cross-App SSO (Livria Store <-> Livria Social)
+
+    public func discoverCrossAppAccount() async -> SocialCrossAppAccount? {
+        let items = [URLQueryItem(name: "currentApp", value: "Livria Social")]
+        if let res: SocialCrossAppDiscoverResponse = try? await getJSON("/sso/discover", queryItems: items),
+           res.hasAccount, let account = res.account {
+            return account
+        }
+        if let resStore: SocialCrossAppDiscoverResponse = try? await getJSON("\(storeBaseAPI)/sso/discover", queryItems: items),
+           resStore.hasAccount, let account = resStore.account {
+            return account
+        }
+        return nil
+    }
+
+    public func announceCrossAppSession(userId: Int, email: String) async {
+        let payload: [String: Any] = [
+            "appName": "Livria Social",
+            "userId": userId,
+            "email": email
+        ]
+        _ = try? await postRaw("/sso/announce", body: payload)
+        _ = try? await postRaw("\(storeBaseAPI)/sso/announce", body: payload)
+    }
+
+    public func clearCrossAppSession() async {
+        let payload: [String: Any] = ["appName": "Livria Social"]
+        _ = try? await postRaw("/sso/clear", body: payload)
+        _ = try? await postRaw("\(storeBaseAPI)/sso/clear", body: payload)
+    }
+
+    public func acceptCrossAppAccount(userId: Int, email: String) async throws -> SocialAuthResponse {
+        let payload: [String: Any] = [
+            "userId": userId,
+            "email": email
+        ]
+        return try await postJSON("/sso/accept", body: payload)
     }
 
     public func fetchBootstrap(email: String?, userId: Int?, filter: String = "all") async throws -> SocialBootstrapResponse {

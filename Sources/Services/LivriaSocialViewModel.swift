@@ -30,6 +30,13 @@ public final class LivriaSocialViewModel: ObservableObject {
     @Published public var isAuthenticated: Bool = false
     @Published public var currentUser: SocialUserProfile? = nil
 
+    // Détection Automatique de Compte Viple Inter-Application (Livria Store <-> Livria Social)
+    @Published public var detectedCrossAppAccount: SocialCrossAppAccount? = nil
+    @Published public var isShowingCrossAppSSOPrompt: Bool = false
+    @Published public var isAcceptingCrossAppSSO: Bool = false
+    private var dismissedCrossAppUserIds: Set<Int> = []
+    private let sharedGroupDefaults = UserDefaults(suiteName: "group.store.livria.shared")
+
     // Verrous quotidiens locaux + serveur (1 bonus quotidien / jour et 1 roue / jour)
     @Published public var hasClaimedDailyToday: Bool = false
     @Published public var hasSpunWheelToday: Bool = false
@@ -56,6 +63,8 @@ public final class LivriaSocialViewModel: ObservableObject {
     private let savedEmailKey = "livria.social.ios.authEmail.v2"
     private let savedUserIdKey = "livria.social.ios.authUserId.v2"
     private let savedTokenKey = "livria.social.ios.authToken.v2"
+    private let savedDisplayNameKey = "livria.social.ios.authDisplayName.v2"
+    private let savedAvatarUrlKey = "livria.social.ios.authAvatarUrl.v2"
 
     public init() {
         // Nettoyage des anciennes clés v1 qui pouvaient contenir le compte fallback par défaut
@@ -81,6 +90,7 @@ public final class LivriaSocialViewModel: ObservableObject {
                 withAnimation(.easeInOut(duration: 0.45)) {
                     self.isInitialBootstrapping = false
                 }
+                await checkCrossAppVipleAccount()
             }
         } else {
             self.isAuthenticated = false
@@ -94,6 +104,7 @@ public final class LivriaSocialViewModel: ObservableObject {
                 withAnimation(.easeInOut(duration: 0.45)) {
                     self.isInitialBootstrapping = false
                 }
+                await checkCrossAppVipleAccount()
             }
         }
     }
@@ -113,6 +124,9 @@ public final class LivriaSocialViewModel: ObservableObject {
         defaults.set(true, forKey: acceptedTermsKey)
         withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
             hasAcceptedTermsOfUse = true
+        }
+        Task {
+            await checkCrossAppVipleAccount()
         }
     }
 
@@ -204,6 +218,11 @@ public final class LivriaSocialViewModel: ObservableObject {
             }
             self.currentUser = boot.user
             self.isAuthenticated = true
+            defaults.set(boot.user.email, forKey: savedEmailKey)
+            defaults.set(boot.user.id, forKey: savedUserIdKey)
+            defaults.set(boot.user.displayName, forKey: savedDisplayNameKey)
+            defaults.set(boot.user.avatarUrl, forKey: savedAvatarUrlKey)
+            saveLocalCrossAppSession(user: boot.user)
             self.posts = boot.posts
             self.lists = boot.lists
             self.myLists = boot.myLists
@@ -404,12 +423,16 @@ public final class LivriaSocialViewModel: ObservableObject {
                 defaults.removeObject(forKey: savedEmailKey)
                 defaults.removeObject(forKey: savedUserIdKey)
                 defaults.removeObject(forKey: savedTokenKey)
+                defaults.removeObject(forKey: savedDisplayNameKey)
+                defaults.removeObject(forKey: savedAvatarUrlKey)
+                clearLocalCrossAppSession()
                 currentUser = nil
                 isAuthenticated = false
                 posts = []
                 myLists = []
                 conversations = []
                 games = nil
+                await LivriaSocialAPIClient.shared.clearCrossAppSession()
                 showToast("Votre compte Viple Live ID a été définitivement supprimé.")
                 return true
             } else {
@@ -441,6 +464,9 @@ public final class LivriaSocialViewModel: ObservableObject {
             defaults.set(user.email, forKey: savedEmailKey)
             defaults.set(user.id, forKey: savedUserIdKey)
             defaults.set(res.token ?? "ls-token-\(user.id)", forKey: savedTokenKey)
+            defaults.set(user.displayName, forKey: savedDisplayNameKey)
+            defaults.set(user.avatarUrl, forKey: savedAvatarUrlKey)
+            saveLocalCrossAppSession(user: user)
             syncLocalDailyLocks(userId: user.id)
             isShowingAuthSheet = false
             showToast("Bienvenue sur Livria Social, \(user.displayName) !")
@@ -454,6 +480,9 @@ public final class LivriaSocialViewModel: ObservableObject {
         defaults.removeObject(forKey: savedEmailKey)
         defaults.removeObject(forKey: savedUserIdKey)
         defaults.removeObject(forKey: savedTokenKey)
+        defaults.removeObject(forKey: savedDisplayNameKey)
+        defaults.removeObject(forKey: savedAvatarUrlKey)
+        clearLocalCrossAppSession()
         currentUser = nil
         isAuthenticated = false
         posts = []
@@ -461,6 +490,120 @@ public final class LivriaSocialViewModel: ObservableObject {
         conversations = []
         games = nil
         showToast("Vous êtes déconnecté de votre compte Viple Live ID.")
+        Task {
+            await LivriaSocialAPIClient.shared.clearCrossAppSession()
+        }
+    }
+
+    // MARK: - 2b. Connexion Automatique Inter-Applications Viple Live ID (Livria Store <-> Livria Social)
+
+    private func saveLocalCrossAppSession(user: SocialUserProfile) {
+        guard !user.email.lowercased().hasSuffix("@guest.livria.store") else { return }
+        let account = SocialCrossAppAccount(
+            sourceApp: "Livria Social",
+            userId: user.id,
+            email: user.email,
+            displayName: user.displayName,
+            firstName: "",
+            lastName: "",
+            avatarUrl: user.avatarUrl,
+            level: user.level,
+            xp: user.xp,
+            isLivriaPlus: user.isLivriaPlus
+        )
+        if let data = try? JSONEncoder().encode(account) {
+            sharedGroupDefaults?.set(data, forKey: "viple.crossapp.social.account")
+        }
+    }
+
+    private func clearLocalCrossAppSession() {
+        sharedGroupDefaults?.removeObject(forKey: "viple.crossapp.social.account")
+    }
+
+    public func checkCrossAppVipleAccount(forcePrompt: Bool = false) async {
+        // Si l'utilisateur est déjà connecté sur Livria Social, on annonce sa session
+        if isAuthenticated, let u = currentUser, !u.email.lowercased().hasSuffix("@guest.livria.store") {
+            saveLocalCrossAppSession(user: u)
+            await LivriaSocialAPIClient.shared.announceCrossAppSession(userId: u.id, email: u.email)
+        }
+
+        // Recherche d'un compte Viple actif sur l'autre application (Livria Store)
+        var candidate: SocialCrossAppAccount? = await LivriaSocialAPIClient.shared.discoverCrossAppAccount()
+
+        if candidate == nil,
+           let sharedData = sharedGroupDefaults?.data(forKey: "viple.crossapp.store.account"),
+           let localDecoded = try? JSONDecoder().decode(SocialCrossAppAccount.self, from: sharedData) {
+            candidate = localDecoded
+        }
+
+        guard let found = candidate,
+              found.userId > 0,
+              !found.email.isEmpty,
+              !found.email.lowercased().hasSuffix("@guest.livria.store") else {
+            return
+        }
+
+        // Si on est déjà connecté au même compte Viple sur Livria Social, ne rien proposer
+        if isAuthenticated, let current = currentUser {
+            if current.id == found.userId || current.email.lowercased() == found.email.lowercased() {
+                if detectedCrossAppAccount?.userId == found.userId {
+                    isShowingCrossAppSSOPrompt = false
+                    detectedCrossAppAccount = nil
+                }
+                return
+            }
+        }
+
+        self.detectedCrossAppAccount = found
+        if forcePrompt || !dismissedCrossAppUserIds.contains(found.userId) {
+            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                self.isShowingCrossAppSSOPrompt = true
+            }
+        }
+    }
+
+    public func acceptDetectedCrossAppAccount() async {
+        guard let account = detectedCrossAppAccount else { return }
+        isAcceptingCrossAppSSO = true
+        authErrorMessage = nil
+        defer { isAcceptingCrossAppSSO = false }
+
+        do {
+            let res = try await LivriaSocialAPIClient.shared.acceptCrossAppAccount(
+                userId: account.userId,
+                email: account.email
+            )
+            guard res.ok, let user = res.user else {
+                showToast(res.error ?? "Impossible de synchroniser le compte Viple Live ID.")
+                return
+            }
+            self.currentUser = user
+            self.isAuthenticated = true
+            defaults.set(user.email, forKey: savedEmailKey)
+            defaults.set(user.id, forKey: savedUserIdKey)
+            defaults.set(res.token ?? "ls-token-\(user.id)", forKey: savedTokenKey)
+            defaults.set(user.displayName, forKey: savedDisplayNameKey)
+            defaults.set(user.avatarUrl, forKey: savedAvatarUrlKey)
+            saveLocalCrossAppSession(user: user)
+            syncLocalDailyLocks(userId: user.id)
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.82)) {
+                self.isShowingCrossAppSSOPrompt = false
+                self.isShowingAuthSheet = false
+            }
+            showToast("Connecté automatiquement à \(user.displayName) depuis \(account.sourceApp) ✨")
+            await refreshBootstrap(email: user.email, userId: user.id)
+        } catch {
+            showToast(error.localizedDescription)
+        }
+    }
+
+    public func dismissCrossAppPrompt() {
+        if let uid = detectedCrossAppAccount?.userId {
+            dismissedCrossAppUserIds.insert(uid)
+        }
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
+            isShowingCrossAppSSOPrompt = false
+        }
     }
 
     // MARK: - 3. Fil d'Actualité : Publications, Réactions & Commentaires
@@ -841,6 +984,42 @@ public final class LivriaSocialViewModel: ObservableObject {
         let host = url.host?.lowercased() ?? ""
         let pathParts = url.pathComponents.filter { $0 != "/" }
         let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+
+        // Si Livria Store transmet le compte Viple actif dans les paramètres du lien, on le propose immédiatement
+        if let ssoUidStr = queryItems.first(where: { $0.name == "ssoUid" })?.value,
+           let ssoUid = Int(ssoUidStr),
+           ssoUid > 0,
+           let ssoEmail = queryItems.first(where: { $0.name == "ssoEmail" })?.value,
+           !ssoEmail.isEmpty,
+           !ssoEmail.lowercased().hasSuffix("@guest.livria.store") {
+            let ssoName = queryItems.first(where: { $0.name == "ssoName" })?.value ?? "Lecteur Viple"
+            let ssoAvatar = queryItems.first(where: { $0.name == "ssoAvatar" })?.value ?? ""
+            let ssoSource = queryItems.first(where: { $0.name == "ssoSource" })?.value ?? "Livria Store"
+            let incomingAccount = SocialCrossAppAccount(
+                sourceApp: ssoSource,
+                userId: ssoUid,
+                email: ssoEmail,
+                displayName: ssoName,
+                firstName: "",
+                lastName: "",
+                avatarUrl: ssoAvatar,
+                level: 1,
+                xp: 100,
+                isLivriaPlus: false
+            )
+            let isAlreadySameUser = isAuthenticated
+                && (currentUser?.id == ssoUid || currentUser?.email.lowercased() == ssoEmail.lowercased())
+            if !isAlreadySameUser {
+                self.detectedCrossAppAccount = incomingAccount
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+                    self.isShowingCrossAppSSOPrompt = true
+                }
+            }
+        }
+
+        Task {
+            await checkCrossAppVipleAccount(forcePrompt: true)
+        }
 
         var extractedId: Int? = nil
         if (host == "profile" || host == "member" || host == "u"), let first = pathParts.first, let id = Int(first) {

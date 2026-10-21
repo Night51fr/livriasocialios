@@ -248,10 +248,27 @@ public enum LivriaSocialBookLinkOpener {
         }
 
         #if canImport(UIKit)
-        if resolvedId > 0, let appDeepLink = URL(string: "livriastore://book/\(resolvedId)") {
-            UIApplication.shared.open(appDeepLink, options: [:]) { opened in
-                if !opened, let webUrl = URL(string: fallbackWebString) {
-                    UIApplication.shared.open(webUrl, options: [:], completionHandler: nil)
+        if resolvedId > 0 {
+            var comps = URLComponents(string: "livriastore://book/\(resolvedId)")
+            let defaults = UserDefaults.standard
+            let savedUid = defaults.integer(forKey: "livria.social.ios.authUserId.v2")
+            let savedEmail = defaults.string(forKey: "livria.social.ios.authEmail.v2") ?? ""
+            let savedName = defaults.string(forKey: "livria.social.ios.authDisplayName.v2") ?? ""
+            let savedAvatar = defaults.string(forKey: "livria.social.ios.authAvatarUrl.v2") ?? ""
+            if savedUid > 0 && !savedEmail.isEmpty && !savedEmail.lowercased().hasSuffix("@guest.livria.store") {
+                comps?.queryItems = [
+                    URLQueryItem(name: "ssoUid", value: String(savedUid)),
+                    URLQueryItem(name: "ssoEmail", value: savedEmail),
+                    URLQueryItem(name: "ssoName", value: savedName.isEmpty ? "Lecteur Viple" : savedName),
+                    URLQueryItem(name: "ssoAvatar", value: savedAvatar),
+                    URLQueryItem(name: "ssoSource", value: "Livria Social")
+                ]
+            }
+            if let appDeepLink = comps?.url ?? URL(string: "livriastore://book/\(resolvedId)") {
+                UIApplication.shared.open(appDeepLink, options: [:]) { opened in
+                    if !opened, let webUrl = URL(string: fallbackWebString) {
+                        UIApplication.shared.open(webUrl, options: [:], completionHandler: nil)
+                    }
                 }
             }
         } else if let webUrl = URL(string: fallbackWebString) {

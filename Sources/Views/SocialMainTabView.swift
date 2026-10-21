@@ -38,6 +38,18 @@ public struct SocialMainTabView: View {
                 authenticatedTabExperience
                     .transition(.opacity)
             }
+
+            if !social.mobileAppMaintenanceEnabled
+                && !social.isInitialBootstrapping
+                && !(social.isServerUnreachable && social.posts.isEmpty)
+                && social.hasAcceptedTermsOfUse
+                && social.isShowingCrossAppSSOPrompt,
+               let account = social.detectedCrossAppAccount {
+                LivriaSocialCrossAppSSOPromptView(account: account)
+                    .environmentObject(social)
+                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                    .zIndex(150)
+            }
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $social.isShowingTermsReviewSheet) {
@@ -48,6 +60,7 @@ public struct SocialMainTabView: View {
             if newPhase == .active {
                 Task {
                     await social.refreshMaintenanceStatus()
+                    await social.checkCrossAppVipleAccount()
                 }
             }
         }
@@ -131,19 +144,199 @@ public struct SocialMainTabView: View {
                 .environmentObject(social)
         }
         .sheet(item: $social.deepLinkedMemberProfile) { member in
-            NavigationStack {
-                MemberPublicProfileView(memberId: member.id, initialSummary: member)
-                    .environmentObject(social)
-                    .toolbar {
-                        ToolbarItem(placement: .cancellationAction) {
-                            Button("Fermer") {
-                                social.deepLinkedMemberProfile = nil
+            ZStack {
+                NavigationStack {
+                    MemberPublicProfileView(memberId: member.id, initialSummary: member)
+                        .environmentObject(social)
+                        .toolbar {
+                            ToolbarItem(placement: .cancellationAction) {
+                                Button("Fermer") {
+                                    social.deepLinkedMemberProfile = nil
+                                }
+                                .foregroundStyle(.white)
                             }
-                            .foregroundStyle(.white)
                         }
-                    }
+                }
+
+                if social.isShowingCrossAppSSOPrompt, let account = social.detectedCrossAppAccount {
+                    LivriaSocialCrossAppSSOPromptView(account: account)
+                        .environmentObject(social)
+                        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+                        .zIndex(150)
+                }
             }
             .preferredColorScheme(.dark)
+        }
+    }
+}
+
+// MARK: - Proposition Automatique de Connexion Inter-Application (« Nous avons détecté que vous étiez connecté depuis Livria Store... »)
+
+public struct LivriaSocialCrossAppSSOPromptView: View {
+    @EnvironmentObject private var social: LivriaSocialViewModel
+    public let account: SocialCrossAppAccount
+
+    public init(account: SocialCrossAppAccount) {
+        self.account = account
+    }
+
+    private var fullNameLine: String {
+        "\(account.firstName) \(account.lastName)".trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public var body: some View {
+        ZStack {
+            Color.black.opacity(0.68)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    social.dismissCrossAppPrompt()
+                }
+
+            VStack(spacing: 18) {
+                // Badge Viple Live ID Inter-Apps
+                HStack(spacing: 6) {
+                    Image(systemName: "person.badge.shield.checkmark.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(LivriaSocialPalette.gold)
+                    Text("CONNEXION AUTOMATIQUE VIPLE LIVE ID")
+                        .font(.system(size: 11, weight: .black, design: .rounded))
+                        .foregroundStyle(LivriaSocialPalette.gold)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.white.opacity(0.10)))
+                .overlay(Capsule().stroke(LivriaSocialPalette.gold.opacity(0.35), lineWidth: 1))
+
+                // Texte exact demandé par l'utilisateur
+                VStack(spacing: 8) {
+                    Text("Nous avons détecté que vous étiez connecté depuis \(account.sourceApp)")
+                        .font(.system(size: 18, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+
+                    Text("Souhaitez-vous vous connecter au même compte avec Livria Social ?")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.horizontal, 8)
+
+                // Carte Profil Viple (Photo de profil, Nom du compte, Nom/Prénom, Email, Niveau/XP, Badge Looby+)
+                HStack(spacing: 14) {
+                    SocialAvatarRingView(
+                        avatarUrl: account.avatarUrl,
+                        displayName: account.displayName,
+                        level: max(1, account.level),
+                        size: 68
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text(account.displayName)
+                                .font(.system(size: 17, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+                                .lineLimit(1)
+
+                            if account.isLivriaPlus {
+                                Label("Looby+", systemImage: "crown.fill")
+                                    .font(.system(size: 10, weight: .heavy, design: .rounded))
+                                    .padding(.horizontal, 7)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(LivriaSocialPalette.gold.opacity(0.22)))
+                                    .foregroundStyle(LivriaSocialPalette.gold)
+                            }
+                        }
+
+                        if !fullNameLine.isEmpty && fullNameLine.lowercased() != account.displayName.lowercased() {
+                            Text(fullNameLine)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white.opacity(0.88))
+                                .lineLimit(1)
+                        }
+
+                        Text(account.email)
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
+                            .lineLimit(1)
+
+                        HStack(spacing: 8) {
+                            Label("Niveau \(max(1, account.level))", systemImage: "sparkles")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(LivriaSocialPalette.gold)
+
+                            Text("•")
+                                .foregroundStyle(LivriaSocialPalette.textMuted)
+
+                            Text("\(max(0, account.xp)) XP")
+                                .font(.system(size: 11, weight: .bold, design: .rounded))
+                                .foregroundStyle(LivriaSocialPalette.coral)
+                        }
+                        .padding(.top, 2)
+                    }
+
+                    Spacer(minLength: 0)
+                }
+                .padding(14)
+                .background(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(Color.white.opacity(0.20), lineWidth: 1)
+                )
+
+                // Boutons d'action
+                VStack(spacing: 10) {
+                    Button {
+                        Task {
+                            await social.acceptDetectedCrossAppAccount()
+                        }
+                    } label: {
+                        HStack(spacing: 10) {
+                            if social.isAcceptingCrossAppSSO {
+                                ProgressView()
+                                    .tint(.white)
+                            } else {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 18, weight: .bold))
+                            }
+                            Text("Continuer en tant que \(account.displayName)")
+                                .font(.system(size: 15, weight: .black, design: .rounded))
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                        .background(LivriaSocialPalette.brandGradient)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: LivriaSocialPalette.coral.opacity(0.35), radius: 10, x: 0, y: 4)
+                    }
+                    .disabled(social.isAcceptingCrossAppSSO)
+
+                    Button {
+                        social.dismissCrossAppPrompt()
+                    } label: {
+                        Text("Utiliser un autre compte Viple Live ID")
+                            .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                    }
+                    .disabled(social.isAcceptingCrossAppSSO)
+                }
+            }
+            .padding(22)
+            .background(
+                RoundedRectangle(cornerRadius: 28, style: .continuous)
+                    .fill(LivriaSocialPalette.cardSurface)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 28, style: .continuous)
+                            .stroke(Color.white.opacity(0.22), lineWidth: 1.2)
+                    )
+                    .shadow(color: Color.black.opacity(0.45), radius: 26, x: 0, y: 12)
+            )
+            .padding(.horizontal, 20)
         }
     }
 }
@@ -413,6 +606,9 @@ public struct SocialMandatoryAuthView: View {
                     if social.pendingAppleOnboardingUserId != nil {
                         applePostSignupOnboardingCard
                     } else {
+                        if let account = social.detectedCrossAppAccount {
+                            crossAppDetectedBanner(account: account)
+                        }
                         // Sélecteur Connexion / Créer un compte
                         HStack(spacing: 8) {
                             Button {
@@ -942,5 +1138,56 @@ public struct SocialMandatoryAuthView: View {
         case .failure:
             break
         }
+    }
+
+    private func crossAppDetectedBanner(account: SocialCrossAppAccount) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Nous avons détecté que vous étiez connecté depuis \(account.sourceApp). Souhaitez-vous vous connecter au même compte avec Livria Social ?")
+                .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                .foregroundStyle(.white)
+
+            HStack(spacing: 12) {
+                SocialAvatarRingView(
+                    avatarUrl: account.avatarUrl,
+                    displayName: account.displayName,
+                    level: max(1, account.level),
+                    size: 54
+                )
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(account.displayName)
+                        .font(.system(size: 15, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text(account.email)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                }
+                Spacer()
+            }
+
+            Button {
+                Task {
+                    await social.acceptDetectedCrossAppAccount()
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    if social.isAcceptingCrossAppSSO {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "checkmark.seal.fill")
+                    }
+                    Text("Se connecter en 1 clic (\(account.displayName))")
+                        .font(.system(size: 14, weight: .black, design: .rounded))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(LivriaSocialPalette.brandGradient)
+                .foregroundStyle(.white)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .disabled(social.isAcceptingCrossAppSSO)
+        }
+        .padding(16)
+        .socialCard()
     }
 }
