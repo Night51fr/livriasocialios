@@ -32,12 +32,14 @@ public struct SocialGamesHubView: View {
                 VStack(spacing: 16) {
                     gamesHeroCard
 
-                    Picker("Mini-Jeu", selection: $selectedGameSection) {
-                        Text("🎡 Roue & Bonus").tag(0)
-                        Text("🧠 Quiz XP").tag(1)
-                        Text("🔤 Mot Mystère").tag(2)
-                    }
-                    .pickerStyle(.segmented)
+                    SocialSegmentedPillBar(
+                        items: [
+                            (0, "Roue & Bonus", "sparkles"),
+                            (1, "Quiz XP", "brain.head.profile"),
+                            (2, "Mot Mystère", "textformat.abc")
+                        ],
+                        selection: $selectedGameSection
+                    )
 
                     if selectedGameSection == 0 {
                         dailyBonusAndWheelSection

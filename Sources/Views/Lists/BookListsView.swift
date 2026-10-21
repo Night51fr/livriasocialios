@@ -19,11 +19,13 @@ public struct BookListsView: View {
                 VStack(spacing: 16) {
                     remunerationHeroBanner
 
-                    Picker("Affichage", selection: $selectedSegment) {
-                        Text("Toutes les listes (\(social.lists.count))").tag(0)
-                        Text("Mes listes (\(social.myLists.count))").tag(1)
-                    }
-                    .pickerStyle(.segmented)
+                    SocialSegmentedPillBar(
+                        items: [
+                            (0, "Toutes les listes (\(social.lists.count))", "sparkles"),
+                            (1, "Mes listes (\(social.myLists.count))", "folder.fill.badge.person.crop")
+                        ],
+                        selection: $selectedSegment
+                    )
 
                     if displayedLists.isEmpty {
                         VStack(spacing: 12) {

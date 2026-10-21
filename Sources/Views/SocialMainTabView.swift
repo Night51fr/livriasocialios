@@ -1,6 +1,6 @@
 import SwiftUI
 
-// MARK: - Navigation Principale « Livria Social » (Bundle ID: store.livria.social • Fil d'actu, Listes, Messages, Jeux XP & Profil)
+// MARK: - Navigation Principale « Livria Social » avec Barre d'Onglets Design & Logo "Mon Profil" Garanti
 
 public struct SocialMainTabView: View {
     @EnvironmentObject private var social: LivriaSocialViewModel
@@ -12,7 +12,7 @@ public struct SocialMainTabView: View {
             TabView(selection: $social.selectedTab) {
                 FeedView()
                     .tabItem {
-                        Label("Fil d'actu", systemImage: "sparkles.rectangle.stack.fill")
+                        Label("Fil d'actu", systemImage: "sparkles")
                     }
                     .tag(0)
 
@@ -37,11 +37,11 @@ public struct SocialMainTabView: View {
 
                 SocialProfileView()
                     .tabItem {
-                        Label("Mon Profil", systemImage: "person.crop.circle.badge.sparkles")
+                        Label("Mon Profil", systemImage: "person.crop.circle.fill")
                     }
                     .tag(4)
             }
-            .tint(LivriaSocialPalette.primary)
+            .tint(LivriaSocialPalette.coral)
 
             if let toast = social.activeToastMessage {
                 HStack(spacing: 10) {
@@ -56,13 +56,15 @@ public struct SocialMainTabView: View {
                 .background(
                     Capsule()
                         .fill(LivriaSocialPalette.ink.opacity(0.94))
-                        .shadow(color: Color.black.opacity(0.25), radius: 10, x: 0, y: 4)
+                        .overlay(Capsule().stroke(LivriaSocialPalette.gold.opacity(0.45), lineWidth: 1))
+                        .shadow(color: Color.black.opacity(0.30), radius: 10, x: 0, y: 4)
                 )
                 .padding(.top, 8)
                 .transition(.move(edge: .top).combined(with: .opacity))
                 .zIndex(99)
             }
         }
+        .preferredColorScheme(.dark)
         .sheet(isPresented: $social.isShowingAuthSheet) {
             SocialAuthSheetView()
                 .environmentObject(social)

@@ -45,42 +45,30 @@ public struct FeedView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    HStack(alignment: .firstTextBaseline, spacing: 4) {
-                        Text("Livria")
-                            .font(.system(size: 21, weight: .black, design: .rounded))
-                            .foregroundStyle(
-                                LinearGradient(
-                                    colors: [LivriaSocialPalette.primary, LivriaSocialPalette.coral],
-                                    startPoint: .leading,
-                                    endPoint: .trailing
-                                )
-                            )
-                        Text("(social)")
-                            .font(.system(size: 12, weight: .heavy, design: .rounded))
-                            .foregroundStyle(LivriaSocialPalette.coral)
-                    }
+                    LivriaSocialBrandLogoView(compact: true)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
                         social.isShowingCreatePostSheet = true
                     } label: {
-                        Image(systemName: "plus.bubble.fill")
-                            .symbolRenderingMode(.monochrome)
+                        HStack(spacing: 4) {
+                            Image(systemName: "plus.bubble.fill")
+                            Text("Publier")
+                                .font(.system(size: 12, weight: .bold, design: .rounded))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(LivriaSocialPalette.brandGradient))
+                        .foregroundStyle(.white)
                     }
-                    .tint(LivriaSocialPalette.primary)
 
                     Button {
-                        social.selectedTab = 2
+                        social.selectedTab = 4
                     } label: {
-                        if social.unreadMessagesCount > 0 {
-                            Text("\(Image(systemName: "paperplane.fill")) \(social.unreadMessagesCount)")
-                                .font(.system(size: 13, weight: .bold, design: .rounded))
-                        } else {
-                            Image(systemName: "paperplane.fill")
-                                .symbolRenderingMode(.monochrome)
-                        }
+                        Image(systemName: "person.crop.circle.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(LivriaSocialPalette.gold)
                     }
-                    .tint(LivriaSocialPalette.primary)
                 }
             }
             .refreshable {
@@ -200,11 +188,13 @@ public struct FeedView: View {
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(LivriaSocialPalette.border, lineWidth: 1))
 
             if isSearching {
-                Picker("Section de recherche", selection: $searchScope) {
-                    Text("👥 Membres (\(social.searchedMembers.count))").tag(0)
-                    Text("📚 Livres Boutique").tag(1)
-                }
-                .pickerStyle(.segmented)
+                SocialSegmentedPillBar(
+                    items: [
+                        (0, "Membres (\(social.searchedMembers.count))", "person.2.fill"),
+                        (1, "Livres Boutique", "book.closed.fill")
+                    ],
+                    selection: $searchScope
+                )
             }
         }
     }

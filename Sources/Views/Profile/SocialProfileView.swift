@@ -70,53 +70,73 @@ public struct SocialProfileView: View {
         didLoadInitialForm = true
     }
 
-    // MARK: - Aperçu Temps Réel du Profil
+    // MARK: - Aperçu Temps Réel du Profil avec Bannière & Barre d'XP
 
     private var profileHeaderCard: some View {
         let user = social.currentUser
+        let xp = user?.xpPoints ?? 120
+        let levelProgress = Double(xp % 120) / 120.0
 
-        return VStack(spacing: 12) {
-            HStack(spacing: 14) {
-                SocialAvatarRingView(
-                    name: displayName.isEmpty ? (user?.displayName ?? "Lecteur") : displayName,
-                    avatarUrl: avatarUrl,
-                    accentHex: accentColor,
-                    size: 68
-                )
+        return VStack(spacing: 14) {
+            ZStack(alignment: .bottomLeading) {
+                SocialMeshHeaderBackground()
+                    .frame(height: 92)
+                    .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .overlay(
+                        HStack {
+                            Spacer()
+                            LivriaSocialBrandLogoView(compact: true)
+                                .padding(12)
+                        },
+                        alignment: .topTrailing
+                    )
 
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(displayName.isEmpty ? (user?.displayName ?? "Lecteur Livria") : displayName)
-                            .font(.system(size: 19, weight: .black, design: .rounded))
-                            .foregroundStyle(.white)
+                HStack(spacing: 14) {
+                    SocialAvatarRingView(
+                        name: displayName.isEmpty ? (user?.displayName ?? "Lecteur") : displayName,
+                        avatarUrl: avatarUrl,
+                        level: user?.level ?? 1,
+                        accentHex: accentColor,
+                        size: 74
+                    )
+                    .background(Circle().fill(LivriaSocialPalette.background).padding(-3))
 
-                        Text("Niv. \(user?.level ?? 1)")
-                            .font(.system(size: 11, weight: .black))
-                            .foregroundStyle(LivriaSocialPalette.ink)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(Capsule().fill(LivriaSocialPalette.goldGradient))
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 6) {
+                            Text(displayName.isEmpty ? (user?.displayName ?? "Lecteur Livria") : displayName)
+                                .font(.system(size: 20, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundStyle(LivriaSocialPalette.gold)
+                                .font(.caption)
+                        }
+
+                        Text(user?.handle ?? "@lecteur")
+                            .font(.system(size: 12.5, weight: .bold))
+                            .foregroundStyle(LivriaSocialPalette.goldSoft)
+
+                        if !customTitleBadge.isEmpty {
+                            Text(customTitleBadge)
+                                .font(.system(size: 11, weight: .black, design: .rounded))
+                                .padding(.horizontal, 9)
+                                .padding(.vertical, 3)
+                                .background(Capsule().fill(Color(hex: accentColor).opacity(0.32)))
+                                .foregroundStyle(.white)
+                        }
                     }
-
-                    Text(user?.handle ?? "@lecteur")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(LivriaSocialPalette.textMuted)
-
-                    if !customTitleBadge.isEmpty {
-                        Text(customTitleBadge)
-                            .font(.system(size: 11, weight: .bold))
-                            .foregroundStyle(Color(hex: accentColor))
-                    }
+                    Spacer()
                 }
-
-                Spacer()
+                .padding(.horizontal, 12)
+                .offset(y: 26)
             }
+            .padding(.bottom, 22)
 
             if !motto.isEmpty {
                 Text("« \(motto) »")
-                    .font(.system(size: 13, weight: .semibold, design: .serif))
+                    .font(.system(size: 13.5, weight: .semibold, design: .serif))
                     .italic()
-                    .foregroundStyle(.white.opacity(0.9))
+                    .foregroundStyle(.white.opacity(0.95))
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
@@ -127,18 +147,47 @@ public struct SocialProfileView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            // Barre de progression XP vers le niveau suivant
+            VStack(alignment: .leading, spacing: 5) {
+                HStack {
+                    Label("Niveau \(user?.level ?? 1)", systemImage: "bolt.fill")
+                        .font(.system(size: 11.5, weight: .black, design: .rounded))
+                        .foregroundStyle(LivriaSocialPalette.gold)
+                    Spacer()
+                    Text("\(xp % 120) / 120 XP avant le Niv. \((user?.level ?? 1) + 1)")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule()
+                            .fill(Color.white.opacity(0.10))
+                            .frame(height: 8)
+                        Capsule()
+                            .fill(LivriaSocialPalette.brandGradient)
+                            .frame(width: max(20, geo.size.width * max(0.12, levelProgress)), height: 8)
+                    }
+                }
+                .frame(height: 8)
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.05)))
+
             HStack(spacing: 10) {
-                profileStatBox(label: "Points XP", value: "\(user?.xpPoints ?? 120) XP")
-                profileStatBox(label: "Cagnotte", value: String(format: "%.2f €", user?.affiliateBalanceEur ?? 0))
-                profileStatBox(label: "Mes Listes", value: "\(social.myLists.count)")
+                profileStatBox(label: "Points XP", value: "\(xp) XP", icon: "bolt.fill", color: LivriaSocialPalette.accent)
+                profileStatBox(label: "Cagnotte", value: String(format: "%.2f €", user?.affiliateBalanceEur ?? 0), icon: "eurosign.circle.fill", color: LivriaSocialPalette.emerald)
+                profileStatBox(label: "Mes Listes", value: "\(social.myLists.count)", icon: "books.vertical.fill", color: LivriaSocialPalette.gold)
             }
         }
         .padding(16)
         .socialCard(opacity: cardOpacity / 100.0)
     }
 
-    private func profileStatBox(label: String, value: String) -> some View {
-        VStack(spacing: 3) {
+    private func profileStatBox(label: String, value: String, icon: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 14, weight: .bold))
+                .foregroundStyle(color)
             Text(value)
                 .font(.system(size: 15, weight: .black, design: .rounded))
                 .foregroundStyle(.white)
@@ -147,39 +196,43 @@ public struct SocialProfileView: View {
                 .foregroundStyle(LivriaSocialPalette.textMuted)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+        .padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.07)))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(color.opacity(0.28), lineWidth: 1))
     }
 
-    // MARK: - Compte Viple Live ID (SSO partagé avec Livria Store)
+    // MARK: - Mon Compte Livria
 
     private var vipleLiveIdAccountCard: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("COMPTE UNIFIÉ VIPLE LIVE ID", systemImage: "person.badge.shield.checkmark.fill")
-                    .font(.system(size: 11, weight: .black, design: .rounded))
+                Label("MON COMPTE LIVRIA", systemImage: "person.crop.circle.badge.checkmark")
+                    .font(.system(size: 11.5, weight: .black, design: .rounded))
                     .foregroundStyle(LivriaSocialPalette.accent)
                 Spacer()
-                Text(social.isAuthenticated ? "Connecté" : "Mode invité")
+                Text(social.isAuthenticated ? "Connecté ✓" : "Session Invité")
                     .font(.system(size: 11, weight: .bold))
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill((social.isAuthenticated ? LivriaSocialPalette.emerald : LivriaSocialPalette.gold).opacity(0.18)))
                     .foregroundStyle(social.isAuthenticated ? LivriaSocialPalette.emerald : LivriaSocialPalette.gold)
             }
 
             Text(social.isAuthenticated
-                 ? "Connecté avec \(social.currentUser?.email ?? ""). Votre cagnotte affiliée et vos listes sont synchronisées avec Livria Store."
-                 : "Connectez-vous avec le même compte que sur l'application Livria Store pour synchroniser vos listes rémunérées et votre cagnotte.")
-                .font(.system(size: 12))
+                 ? "Connecté avec \(social.currentUser?.email ?? ""). Votre cagnotte et vos listes de lecture sont reliées à votre espace Livria Store."
+                 : "Connectez-vous avec votre compte Livria pour retrouver vos listes rémunérées, vos amis et votre cagnotte.")
+                .font(.system(size: 12.5))
                 .foregroundStyle(LivriaSocialPalette.textMuted)
 
             HStack(spacing: 10) {
                 Button {
                     social.isShowingAuthSheet = true
                 } label: {
-                    Label(social.isAuthenticated ? "Changer de compte" : "Se connecter / Créer un compte", systemImage: "key.fill")
-                        .font(.system(size: 12, weight: .black))
+                    Label(social.isAuthenticated ? "Changer de compte" : "Se connecter / Créer un compte", systemImage: "person.fill.checkmark")
+                        .font(.system(size: 12.5, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
+                        .padding(.vertical, 10)
                         .background(Capsule().fill(LivriaSocialPalette.brandGradient))
                 }
 
@@ -187,11 +240,11 @@ public struct SocialProfileView: View {
                     Button(role: .destructive) {
                         social.signOut()
                     } label: {
-                        Text("Déconnexion")
-                            .font(.system(size: 12, weight: .bold))
+                        Text("Se déconnecter")
+                            .font(.system(size: 12.5, weight: .bold))
                             .foregroundStyle(LivriaSocialPalette.secondary)
                             .padding(.horizontal, 12)
-                            .padding(.vertical, 9)
+                            .padding(.vertical, 10)
                             .background(Capsule().fill(Color.white.opacity(0.08)))
                     }
                 }
@@ -209,11 +262,37 @@ public struct SocialProfileView: View {
                 .font(.system(size: 12, weight: .black, design: .rounded))
                 .foregroundStyle(LivriaSocialPalette.gold)
 
-            Picker("Mode de fond", selection: $pageBackgroundType) {
-                Text("Thèmes Dégradés (12)").tag("preset")
-                Text("Image Personnalisée").tag("image")
+            HStack(spacing: 8) {
+                Button {
+                    withAnimation { pageBackgroundType = "preset" }
+                } label: {
+                    Label("Thèmes Dégradés", systemImage: "paintpalette.fill")
+                        .font(.system(size: 12.5, weight: .black, design: .rounded))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(pageBackgroundType == "preset" ? AnyShapeStyle(LivriaSocialPalette.brandGradient) : AnyShapeStyle(Color.white.opacity(0.06)))
+                        )
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    withAnimation { pageBackgroundType = "image" }
+                } label: {
+                    Label("Image Perso", systemImage: "photo.fill")
+                        .font(.system(size: 12.5, weight: .black, design: .rounded))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                .fill(pageBackgroundType == "image" ? AnyShapeStyle(LivriaSocialPalette.brandGradient) : AnyShapeStyle(Color.white.opacity(0.06)))
+                        )
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
             }
-            .pickerStyle(.segmented)
 
             if pageBackgroundType == "preset" {
                 LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
