@@ -132,8 +132,6 @@ public struct SocialMandatoryAuthView: View {
     @State private var appleLastName: String = ""
     @State private var appleDisplayName: String = ""
     @State private var appleViplemailUser: String = ""
-    @State private var isShowingAppleICloudSheet: Bool = false
-    @State private var appleICloudEmailInput: String = ""
 
     public init() {}
 
@@ -350,9 +348,6 @@ public struct SocialMandatoryAuthView: View {
                 .padding(.horizontal, 18)
             }
         }
-        .sheet(isPresented: $isShowingAppleICloudSheet) {
-            appleICloudDirectAuthSheet
-        }
         .onChange(of: social.pendingAppleOnboardingUserId) { _, newValue in
             if newValue != nil {
                 appleFirstName = social.pendingAppleFirstName
@@ -523,101 +518,8 @@ public struct SocialMandatoryAuthView: View {
                     identityToken: tokenString
                 )
             }
-        case .failure(let error):
-            let nsErr = error as NSError
-            if nsErr.domain == ASAuthorizationError.errorDomain && nsErr.code == ASAuthorizationError.canceled.rawValue {
-                return
-            }
-            isShowingAppleICloudSheet = true
+        case .failure:
+            break
         }
-    }
-
-    private var appleICloudDirectAuthSheet: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 18) {
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle()
-                            .fill(Color.white)
-                            .frame(width: 50, height: 50)
-                        Image(systemName: "apple.logo")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundStyle(.black)
-                    }
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Continuer avec Apple")
-                            .font(.system(size: 20, weight: .black, design: .rounded))
-                            .foregroundStyle(.white)
-                        Text("Identifiant Apple / Boîte mail iCloud associée à Viple Live ID")
-                            .font(.system(size: 12.5))
-                            .foregroundStyle(LivriaSocialPalette.textMuted)
-                    }
-                }
-
-                Text("Saisissez l'adresse e-mail de votre compte Apple (iCloud). Si vous vous inscrivez pour la première fois, vous pourrez immédiatement choisir votre nom, prénom, pseudo et votre adresse @viplemail.fr.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(LivriaSocialPalette.textMuted)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Adresse e-mail de votre compte Apple (iCloud)")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
-                    HStack {
-                        Image(systemName: "icloud.fill")
-                            .foregroundStyle(LivriaSocialPalette.gold)
-                        TextField("ex: votre.nom@icloud.com", text: $appleICloudEmailInput)
-                            .textInputAutocapitalization(.never)
-                            .keyboardType(.emailAddress)
-                            .autocorrectionDisabled()
-                            .foregroundStyle(.white)
-                    }
-                    .padding(13)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.10)))
-                }
-
-                Button {
-                    let cleanEmail = appleICloudEmailInput.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-                    guard cleanEmail.contains("@") else { return }
-                    let derivedAppleId = "apple.icloud.\(cleanEmail)"
-                    isShowingAppleICloudSheet = false
-                    Task {
-                        await social.handleSignInWithApple(
-                            appleUserId: derivedAppleId,
-                            email: cleanEmail,
-                            firstName: nil,
-                            lastName: nil,
-                            identityToken: nil
-                        )
-                    }
-                } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "apple.logo")
-                        Text("Continuer avec cet identifiant Apple")
-                            .font(.system(size: 15.5, weight: .bold, design: .rounded))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 15)
-                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.white))
-                    .foregroundStyle(.black)
-                }
-                .disabled(!appleICloudEmailInput.contains("@"))
-
-                Spacer()
-            }
-            .padding(22)
-            .background(LivriaSocialPalette.heroGradient.ignoresSafeArea())
-            .navigationTitle("Sign in with Apple")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Annuler") {
-                        isShowingAppleICloudSheet = false
-                    }
-                    .foregroundStyle(.white)
-                }
-            }
-        }
-        .preferredColorScheme(.dark)
-        .presentationDetents([.medium])
     }
 }
