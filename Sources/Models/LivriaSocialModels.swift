@@ -59,6 +59,15 @@ public struct SocialUserProfile: Codable, Identifiable, Equatable, Sendable {
     public var cardOpacity: Int
     public var bannerUrl: String
     public var customTitleBadge: String
+
+    // Propriétés calculées de compatibilité pour les vues
+    public var xpPoints: Int { xp }
+    public var affiliateBalanceEur: Double { affiliateEarnings + cashbackBalance }
+    public var handle: String {
+        let base = email.split(separator: "@").first.map(String.init)
+            ?? displayName.lowercased().replacingOccurrences(of: " ", with: "")
+        return "@\(base.isEmpty ? "lecteur" : base)"
+    }
 }
 
 public struct SocialMemberSummary: Codable, Identifiable, Equatable, Hashable, Sendable {
@@ -74,6 +83,12 @@ public struct SocialMemberSummary: Codable, Identifiable, Equatable, Hashable, S
     public var level: Int
     public var isLivriaPlus: Bool
     public var profileUrl: String
+
+    public var handle: String {
+        let base = email?.split(separator: "@").first.map(String.init)
+            ?? displayName.lowercased().replacingOccurrences(of: " ", with: "")
+        return "@\(base.isEmpty ? "lecteur" : base)"
+    }
 }
 
 public struct SocialBookItem: Codable, Identifiable, Equatable, Hashable, Sendable {
@@ -89,6 +104,8 @@ public struct SocialBookItem: Codable, Identifiable, Equatable, Hashable, Sendab
     public var usedPrice: Double?
     public var availabilityBadge: String
     public var storeUrl: String
+
+    public var priceTtc: Double { price }
 }
 
 public struct SocialSharedListSummary: Codable, Identifiable, Equatable, Sendable {
@@ -134,10 +151,16 @@ public struct SocialFeedPost: Codable, Identifiable, Equatable, Sendable {
     public var comments: [SocialPostCommentItem]
 }
 
-public struct SocialBookListEntry: Codable, Equatable, Sendable {
+public struct SocialBookListEntry: Codable, Identifiable, Equatable, Sendable {
     public var itemId: Int
     public var curatorNote: String
     public var book: SocialBookItem
+
+    public var id: Int { itemId }
+    public var bookTitle: String { book.title }
+    public var coverUrl: String { book.coverUrl }
+    public var priceTtc: Double { book.price }
+    public var storeUrl: String { book.storeUrl }
 }
 
 public struct SocialBookListModel: Codable, Identifiable, Equatable, Sendable {
@@ -154,6 +177,16 @@ public struct SocialBookListModel: Codable, Identifiable, Equatable, Sendable {
     public var myLivriaUrl: String
     public var creator: SocialMemberSummary
     public var books: [SocialBookListEntry]
+
+    public var items: [SocialBookListEntry] { books }
+    public var booksCount: Int { books.count }
+    public var isMonetized: Bool { true }
+    public var creatorName: String { creator.displayName }
+    public var creatorHandle: String { creator.handle }
+    public var estimatedEarningsEur: Double { totalEarned }
+    public var shareUrl: String {
+        myLivriaUrl.isEmpty ? "https://my.livria.store/listes/\(id)" : myLivriaUrl
+    }
 }
 
 public struct SocialConversationSummary: Codable, Identifiable, Equatable, Sendable {
@@ -162,6 +195,13 @@ public struct SocialConversationSummary: Codable, Identifiable, Equatable, Senda
     public var lastPreview: String
     public var lastSentAt: String
     public var unreadCount: Int
+
+    public var userId: Int { otherUser.id }
+    public var displayName: String { otherUser.displayName }
+    public var handle: String { otherUser.handle }
+    public var avatarUrl: String { otherUser.avatarUrl }
+    public var accentColor: String { otherUser.accentColor }
+    public var lastMessagePreview: String { lastPreview }
 }
 
 public struct SocialRichMessageItem: Codable, Identifiable, Equatable, Sendable {
@@ -171,13 +211,38 @@ public struct SocialRichMessageItem: Codable, Identifiable, Equatable, Sendable 
     public var isFromMe: Bool
     public var body: String
     public var attachmentType: String
-    public var attachmentUrl: String?
-    public var attachmentTitle: String?
-    public var attachmentMeta: String?
+    public var attachmentUrl: String
+    public var attachmentTitle: String
+    public var attachmentMeta: String
     public var bookId: Int?
     public var voiceDurationSec: Int
     public var isRead: Bool
     public var sentAt: String
+
+    public var isMine: Bool { isFromMe }
+
+    enum CodingKeys: String, CodingKey {
+        case id, senderId, recipientId, isFromMe, body, attachmentType
+        case attachmentUrl, attachmentTitle, attachmentMeta
+        case bookId, voiceDurationSec, isRead, sentAt
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        senderId = try c.decode(Int.self, forKey: .senderId)
+        recipientId = try c.decode(Int.self, forKey: .recipientId)
+        isFromMe = (try? c.decode(Bool.self, forKey: .isFromMe)) ?? false
+        body = (try? c.decode(String.self, forKey: .body)) ?? ""
+        attachmentType = (try? c.decode(String.self, forKey: .attachmentType)) ?? "none"
+        attachmentUrl = (try? c.decodeIfPresent(String.self, forKey: .attachmentUrl)) ?? ""
+        attachmentTitle = (try? c.decodeIfPresent(String.self, forKey: .attachmentTitle)) ?? ""
+        attachmentMeta = (try? c.decodeIfPresent(String.self, forKey: .attachmentMeta)) ?? ""
+        bookId = try? c.decodeIfPresent(Int.self, forKey: .bookId)
+        voiceDurationSec = (try? c.decode(Int.self, forKey: .voiceDurationSec)) ?? 0
+        isRead = (try? c.decode(Bool.self, forKey: .isRead)) ?? true
+        sentAt = (try? c.decode(String.self, forKey: .sentAt)) ?? ""
+    }
 }
 
 public struct SocialThreadResponse: Codable, Sendable {
@@ -195,6 +260,8 @@ public struct SocialMemberPublicProfileResponse: Codable, Sendable {
     public var posts: [SocialFeedPost]
     public var lists: [SocialBookListModel]
     public var readBooks: [SocialBookItem]
+
+    public var member: SocialUserProfile { user }
 }
 
 public struct SocialMemberSearchResponse: Codable, Sendable {
@@ -207,6 +274,9 @@ public struct SocialBackgroundPreset: Codable, Identifiable, Equatable, Sendable
     public var name: String
     public var emoji: String
     public var cssValue: String
+
+    public var key: String { id }
+    public var label: String { "\(emoji) \(name)" }
 }
 
 public struct SocialGamesState: Codable, Equatable, Sendable {
@@ -218,6 +288,11 @@ public struct SocialGamesState: Codable, Equatable, Sendable {
     public var loyaltyPoints: Int
     public var cashbackBalance: Double
     public var affiliateEarnings: Double
+
+    public var xpPoints: Int { xp }
+    public var dailyStreak: Int { streakDays }
+    public var affiliateBalanceEur: Double { affiliateEarnings + cashbackBalance }
+    public var canSpinWheel: Bool { true }
 }
 
 // MARK: - Jeux Littéraires de Livria (Quiz Culturel & Mot Mystère — 100% Sendable)
@@ -229,6 +304,8 @@ public struct SocialQuizQuestionItem: Identifiable, Equatable, Sendable {
     public let correctIndex: Int
     public let explanation: String
     public let xpReward: Int
+
+    public var aneckdote: String { explanation }
 
     public init(id: UUID = UUID(), question: String, options: [String], correctIndex: Int, explanation: String, xpReward: Int) {
         self.id = id

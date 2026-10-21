@@ -56,7 +56,7 @@ public struct FeedView: View {
                                 )
                             )
                         Text("(social)")
-                            .font(.system(size: 12, weight: .extrabold, design: .rounded))
+                            .font(.system(size: 12, weight: .heavy, design: .rounded))
                             .foregroundStyle(LivriaSocialPalette.coral)
                     }
                 }
@@ -174,9 +174,10 @@ public struct FeedView: View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundStyle(LivriaSocialPalette.primary)
+                    .foregroundStyle(LivriaSocialPalette.accent)
                 TextField("Chercher un membre public ou un livre Livria...", text: $searchText)
                     .textInputAutocapitalization(.never)
+                    .foregroundStyle(.white)
                     .onChange(of: searchText) { _, newValue in
                         isSearching = !newValue.trimmingCharacters(in: .whitespaces).isEmpty
                         Task {
@@ -189,13 +190,13 @@ public struct FeedView: View {
                         isSearching = false
                     } label: {
                         Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(LivriaSocialPalette.inkMuted)
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
                     }
                     .buttonStyle(.plain)
                 }
             }
             .padding(11)
-            .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.08)))
             .overlay(RoundedRectangle(cornerRadius: 14).stroke(LivriaSocialPalette.border, lineWidth: 1))
 
             if isSearching {
@@ -226,16 +227,16 @@ public struct FeedView: View {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(member.displayName)
                                     .font(.system(size: 14.5, weight: .bold))
-                                    .foregroundStyle(LivriaSocialPalette.ink)
+                                    .foregroundStyle(.white)
                                 Text(member.bio)
                                     .font(.system(size: 12))
-                                    .foregroundStyle(LivriaSocialPalette.inkMuted)
+                                    .foregroundStyle(LivriaSocialPalette.textMuted)
                                     .lineLimit(1)
                             }
                             Spacer()
                             Text("Voir profil →")
                                 .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(LivriaSocialPalette.primary)
+                                .foregroundStyle(LivriaSocialPalette.gold)
                         }
                         .socialCard(padding: 12)
                     }
@@ -256,13 +257,13 @@ public struct FeedView: View {
                         VStack(alignment: .leading, spacing: 3) {
                             Text(book.title)
                                 .font(.system(size: 14, weight: .bold))
-                                .foregroundStyle(LivriaSocialPalette.ink)
+                                .foregroundStyle(.white)
                             Text(book.author)
                                 .font(.system(size: 12))
-                                .foregroundStyle(LivriaSocialPalette.inkMuted)
+                                .foregroundStyle(LivriaSocialPalette.textMuted)
                             Text(String(format: "%.2f € • %@", book.price, book.availabilityBadge))
                                 .font(.system(size: 12, weight: .bold))
-                                .foregroundStyle(LivriaSocialPalette.primary)
+                                .foregroundStyle(LivriaSocialPalette.gold)
                         }
                         Spacer()
                         if let url = URL(string: book.storeUrl) {
@@ -289,11 +290,11 @@ public struct FeedView: View {
             HStack {
                 Label("Lecteurs à découvrir", systemImage: "person.3.fill")
                     .font(.system(size: 15, weight: .bold, design: .rounded))
-                    .foregroundStyle(LivriaSocialPalette.ink)
+                    .foregroundStyle(.white)
                 Spacer()
                 Text("Profils 100% personnalisés")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(LivriaSocialPalette.primary)
+                    .foregroundStyle(LivriaSocialPalette.gold)
             }
 
             ScrollView(.horizontal, showsIndicators: false) {
@@ -312,16 +313,16 @@ public struct FeedView: View {
                                 )
                                 Text(member.displayName)
                                     .font(.system(size: 11.5, weight: .bold))
-                                    .foregroundStyle(LivriaSocialPalette.ink)
+                                    .foregroundStyle(.white)
                                     .lineLimit(1)
                                     .frame(width: 78)
                                 Text("\(member.xp) XP")
                                     .font(.system(size: 10, weight: .semibold))
-                                    .foregroundStyle(LivriaSocialPalette.primary)
+                                    .foregroundStyle(LivriaSocialPalette.gold)
                             }
                             .padding(.vertical, 10)
                             .padding(.horizontal, 8)
-                            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.92)))
+                            .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.08)))
                             .overlay(RoundedRectangle(cornerRadius: 16).stroke(LivriaSocialPalette.border, lineWidth: 1))
                         }
                         .buttonStyle(.plain)
@@ -340,20 +341,20 @@ public struct FeedView: View {
             HStack(spacing: 12) {
                 Image(systemName: "square.and.pencil.circle.fill")
                     .font(.system(size: 28))
-                    .foregroundStyle(LivriaSocialPalette.primary)
+                    .foregroundStyle(LivriaSocialPalette.gold)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Que lisez-vous en ce moment ?")
                         .font(.system(size: 14, weight: .bold, design: .rounded))
-                        .foregroundStyle(LivriaSocialPalette.ink)
+                        .foregroundStyle(.white)
                     Text("Post, photo, vidéo ou recommandation de livre avec lien direct vers la boutique (+15 XP)")
                         .font(.system(size: 11.5))
-                        .foregroundStyle(LivriaSocialPalette.inkMuted)
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
                         .lineLimit(1)
                 }
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.caption.bold())
-                    .foregroundStyle(LivriaSocialPalette.primary)
+                    .foregroundStyle(LivriaSocialPalette.gold)
             }
             .socialCard(padding: 13)
         }
@@ -381,10 +382,10 @@ public struct FeedView: View {
                                 Capsule().fill(
                                     isSelected
                                         ? LivriaSocialPalette.primary
-                                        : Color.white.opacity(0.9)
+                                        : Color.white.opacity(0.09)
                                 )
                             )
-                            .foregroundStyle(isSelected ? .white : LivriaSocialPalette.ink)
+                            .foregroundStyle(.white)
                             .overlay(Capsule().stroke(LivriaSocialPalette.border, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
@@ -401,13 +402,13 @@ public struct FeedView: View {
                 VStack(spacing: 12) {
                     Image(systemName: "sparkles.rectangle.stack")
                         .font(.system(size: 44))
-                        .foregroundStyle(LivriaSocialPalette.primary)
+                        .foregroundStyle(LivriaSocialPalette.gold)
                     Text("Aucune publication dans cette catégorie")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
-                        .foregroundStyle(LivriaSocialPalette.ink)
+                        .foregroundStyle(.white)
                     Text("Soyez le premier à partager un coup de cœur, une photo ou une recommandation de livre (+15 XP) !")
                         .font(.system(size: 13))
-                        .foregroundStyle(LivriaSocialPalette.inkMuted)
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
                         .multilineTextAlignment(.center)
                     Button {
                         social.isShowingCreatePostSheet = true
@@ -450,7 +451,7 @@ public struct FeedView: View {
                             HStack(spacing: 5) {
                                 Text(post.author.displayName)
                                     .font(.system(size: 14.5, weight: .bold))
-                                    .foregroundStyle(LivriaSocialPalette.ink)
+                                    .foregroundStyle(.white)
                                 if post.author.isLivriaPlus {
                                     Image(systemName: "crown.fill")
                                         .font(.caption2)
@@ -459,7 +460,7 @@ public struct FeedView: View {
                             }
                             Text(post.createdAt)
                                 .font(.system(size: 11))
-                                .foregroundStyle(LivriaSocialPalette.inkMuted)
+                                .foregroundStyle(LivriaSocialPalette.textMuted)
                         }
                     }
                 }
@@ -471,15 +472,15 @@ public struct FeedView: View {
                     .font(.system(size: 11, weight: .bold, design: .rounded))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(LivriaSocialPalette.primarySoft))
-                    .foregroundStyle(LivriaSocialPalette.primaryDeep)
+                    .background(Capsule().fill(LivriaSocialPalette.primary.opacity(0.25)))
+                    .foregroundStyle(.white)
             }
 
             // Contenu texte
             if !post.content.isEmpty {
                 Text(post.content)
                     .font(.system(size: 14.5))
-                    .foregroundStyle(LivriaSocialPalette.ink)
+                    .foregroundStyle(.white.opacity(0.95))
                     .lineSpacing(3)
             }
 
@@ -504,23 +505,23 @@ public struct FeedView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("📖 Livre recommandé sur Livria Store")
                             .font(.system(size: 10.5, weight: .bold))
-                            .foregroundStyle(LivriaSocialPalette.primary)
+                            .foregroundStyle(LivriaSocialPalette.gold)
                         Text(book.title)
                             .font(.system(size: 14.5, weight: .bold, design: .serif))
-                            .foregroundStyle(LivriaSocialPalette.ink)
+                            .foregroundStyle(.white)
                             .lineLimit(2)
                         Text("par \(book.author)")
                             .font(.system(size: 12))
-                            .foregroundStyle(LivriaSocialPalette.inkMuted)
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
                         HStack(spacing: 8) {
                             Text(String(format: "%.2f €", book.price))
                                 .font(.system(size: 14, weight: .black, design: .rounded))
-                                .foregroundStyle(LivriaSocialPalette.primary)
+                                .foregroundStyle(LivriaSocialPalette.gold)
                             Text(book.availabilityBadge)
                                 .font(.system(size: 10, weight: .bold))
                                 .padding(.horizontal, 7)
                                 .padding(.vertical, 2)
-                                .background(Capsule().fill(LivriaSocialPalette.coralSoft))
+                                .background(Capsule().fill(LivriaSocialPalette.coral.opacity(0.22)))
                                 .foregroundStyle(LivriaSocialPalette.coral)
                         }
                     }
@@ -541,7 +542,7 @@ public struct FeedView: View {
                     }
                 }
                 .padding(12)
-                .background(RoundedRectangle(cornerRadius: 16).fill(LivriaSocialPalette.primarySoft.opacity(0.55)))
+                .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.07)))
             }
 
             // Liste de livres partagée
@@ -583,7 +584,7 @@ public struct FeedView: View {
                 .background(RoundedRectangle(cornerRadius: 16).fill(LivriaSocialPalette.socialHeroGradient))
             }
 
-            Divider()
+            Divider().overlay(Color.white.opacity(0.1))
 
             // Barre de Réactions Gamifiées
             HStack(spacing: 8) {
@@ -617,8 +618,8 @@ public struct FeedView: View {
                     .font(.system(size: 12, weight: .bold))
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(Capsule().fill(LivriaSocialPalette.primarySoft))
-                    .foregroundStyle(LivriaSocialPalette.primaryDeep)
+                    .background(Capsule().fill(Color.white.opacity(0.1)))
+                    .foregroundStyle(.white)
                 }
                 .buttonStyle(.plain)
             }
@@ -638,19 +639,19 @@ public struct FeedView: View {
                                 HStack {
                                     Text(comment.authorName)
                                         .font(.system(size: 12, weight: .bold))
-                                        .foregroundStyle(LivriaSocialPalette.ink)
+                                        .foregroundStyle(.white)
                                     Spacer()
                                     Text(comment.createdAt)
                                         .font(.system(size: 10))
-                                        .foregroundStyle(LivriaSocialPalette.inkMuted)
+                                        .foregroundStyle(LivriaSocialPalette.textMuted)
                                 }
                                 Text(comment.content)
                                     .font(.system(size: 12.5))
-                                    .foregroundStyle(LivriaSocialPalette.ink)
+                                    .foregroundStyle(.white.opacity(0.9))
                             }
                         }
                         .padding(8)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(LivriaSocialPalette.background))
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
                     }
 
                     HStack(spacing: 8) {
@@ -662,9 +663,10 @@ public struct FeedView: View {
                             )
                         )
                         .font(.system(size: 13))
+                        .foregroundStyle(.white)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(LivriaSocialPalette.background))
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
 
                         Button {
                             let text = (commentDrafts[post.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
@@ -695,11 +697,11 @@ public struct FeedView: View {
                 Text(emoji)
                 Text("\(count)")
                     .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundStyle(LivriaSocialPalette.ink)
+                    .foregroundStyle(.white)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(Capsule().fill(LivriaSocialPalette.background))
+            .background(Capsule().fill(Color.white.opacity(0.08)))
             .overlay(Capsule().stroke(LivriaSocialPalette.border, lineWidth: 1))
         }
         .buttonStyle(.plain)

@@ -7,15 +7,20 @@ public enum LivriaSocialPalette: Sendable {
     public static let primaryDeep = Color(red: 0.329, green: 0.165, blue: 0.788)   // #542AC9
     public static let primarySoft = Color(red: 0.933, green: 0.906, blue: 1.000)   // #EEE7FF
     public static let coral = Color(red: 1.000, green: 0.373, blue: 0.635)         // #FF5FA2
+    public static let secondary = Color(red: 1.000, green: 0.373, blue: 0.635)     // #FF5FA2
     public static let coralSoft = Color(red: 1.000, green: 0.910, blue: 0.953)     // #FFE8F3
+    public static let accent = Color(red: 0.024, green: 0.714, blue: 0.831)        // #06B6D4
     public static let gold = Color(red: 0.976, green: 0.659, blue: 0.145)          // #F9A825
     public static let goldSoft = Color(red: 1.000, green: 0.957, blue: 0.835)      // #FFF4D5
     public static let mint = Color(red: 0.063, green: 0.725, blue: 0.506)          // #10B981
+    public static let emerald = Color(red: 0.063, green: 0.725, blue: 0.506)       // #10B981
     public static let background = Color(red: 0.988, green: 0.973, blue: 1.000)    // #FCF8FF
     public static let cardPaper = Color.white
+    public static let cardSurface = Color(red: 0.114, green: 0.082, blue: 0.200)   // #1D1533
     public static let ink = Color(red: 0.114, green: 0.082, blue: 0.200)           // #1D1533
     public static let inkMuted = Color(red: 0.435, green: 0.404, blue: 0.529)      // #6F6787
-    public static let border = Color(red: 0.486, green: 0.302, blue: 1.000).opacity(0.16)
+    public static let textMuted = Color(red: 0.680, green: 0.650, blue: 0.790)     // #AEA6C9
+    public static let border = Color(red: 0.486, green: 0.302, blue: 1.000).opacity(0.24)
 
     public static var socialHeroGradient: LinearGradient {
         LinearGradient(
@@ -27,6 +32,29 @@ public enum LivriaSocialPalette: Sendable {
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+
+    public static var brandGradient: LinearGradient {
+        LinearGradient(
+            colors: [primary, coral],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    public static var goldGradient: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(red: 1.000, green: 0.820, blue: 0.280),
+                Color(red: 0.960, green: 0.580, blue: 0.110)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
+    public static func presetGradient(for key: String) -> LinearGradient {
+        gradientForPreset(key)
     }
 
     public static func colorFromHex(_ hex: String) -> Color {
@@ -48,26 +76,32 @@ public enum LivriaSocialPalette: Sendable {
             return LinearGradient(colors: [Color(red: 0.12, green: 0.11, blue: 0.29), Color(red: 0.19, green: 0.06, blue: 0.26), Color(red: 0.06, green: 0.09, blue: 0.16)], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
         if low.contains("sunset") || low.contains("fff7ed") {
-            return LinearGradient(colors: [Color(red: 1.0, green: 0.96, blue: 0.92), Color(red: 1.0, green: 0.91, blue: 0.82), Color(red: 0.99, green: 0.90, blue: 0.95)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            return LinearGradient(colors: [Color(red: 0.28, green: 0.10, blue: 0.24), Color(red: 0.42, green: 0.14, blue: 0.22), Color(red: 0.14, green: 0.08, blue: 0.20)], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
         if low.contains("emerald") || low.contains("ecfdf5") {
-            return LinearGradient(colors: [Color(red: 0.92, green: 0.99, blue: 0.96), Color(red: 0.82, green: 0.98, blue: 0.90), Color(red: 0.88, green: 0.95, blue: 1.0)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            return LinearGradient(colors: [Color(red: 0.05, green: 0.20, blue: 0.18), Color(red: 0.08, green: 0.16, blue: 0.28), Color(red: 0.06, green: 0.09, blue: 0.18)], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
         if low.contains("ocean") || low.contains("ecfeff") {
-            return LinearGradient(colors: [Color(red: 0.92, green: 1.0, blue: 1.0), Color(red: 0.81, green: 0.98, blue: 1.0), Color(red: 0.88, green: 0.91, blue: 1.0)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            return LinearGradient(colors: [Color(red: 0.06, green: 0.16, blue: 0.30), Color(red: 0.12, green: 0.10, blue: 0.32), Color(red: 0.05, green: 0.08, blue: 0.18)], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
         if low.contains("sakura") || low.contains("fff1f2") {
-            return LinearGradient(colors: [Color(red: 1.0, green: 0.94, blue: 0.95), Color(red: 1.0, green: 0.89, blue: 0.90), Color(red: 0.95, green: 0.91, blue: 1.0)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            return LinearGradient(colors: [Color(red: 0.26, green: 0.09, blue: 0.24), Color(red: 0.18, green: 0.10, blue: 0.30), Color(red: 0.09, green: 0.07, blue: 0.18)], startPoint: .topLeading, endPoint: .bottomTrailing)
         }
         return LinearGradient(
             colors: [
-                Color(red: 0.99, green: 0.96, blue: 1.0),
-                Color(red: 0.93, green: 0.91, blue: 1.0),
-                Color(red: 0.99, green: 0.91, blue: 0.95)
+                Color(red: 0.11, green: 0.08, blue: 0.24),
+                Color(red: 0.16, green: 0.09, blue: 0.30),
+                Color(red: 0.07, green: 0.09, blue: 0.18)
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         )
+    }
+}
+
+extension Color {
+    public init(hex: String) {
+        self = LivriaSocialPalette.colorFromHex(hex)
     }
 }
 
@@ -112,6 +146,14 @@ public struct SocialAvatarRingView: View {
     public init(avatarUrl: String?, displayName: String, level: Int = 1, accentHex: String = "#7c4dff", size: CGFloat = 46) {
         self.avatarUrl = avatarUrl
         self.displayName = displayName
+        self.level = level
+        self.accentHex = accentHex
+        self.size = size
+    }
+
+    public init(name: String, avatarUrl: String?, level: Int = 1, accentHex: String = "#7c4dff", size: CGFloat = 46) {
+        self.avatarUrl = avatarUrl
+        self.displayName = name
         self.level = level
         self.accentHex = accentHex
         self.size = size
@@ -194,6 +236,14 @@ public struct SocialBookCoverView: View {
         self.cornerRadius = cornerRadius
     }
 
+    public init(title: String, imageUrl: String, width: CGFloat = 68, height: CGFloat = 98, cornerRadius: CGFloat = 10) {
+        self.coverUrl = imageUrl
+        self.title = title
+        self.width = width
+        self.height = height
+        self.cornerRadius = cornerRadius
+    }
+
     private var resolvedURL: URL? {
         if coverUrl.isEmpty { return nil }
         if coverUrl.hasPrefix("http") { return URL(string: coverUrl) }
@@ -247,13 +297,18 @@ extension View {
             .padding(padding)
             .background(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                    .fill(Color.white.opacity(opacity))
+                    .fill(Color(red: 0.14, green: 0.11, blue: 0.27).opacity(opacity))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
                     .stroke(LivriaSocialPalette.border, lineWidth: 1)
             )
-            .shadow(color: LivriaSocialPalette.primary.opacity(0.07), radius: 10, x: 0, y: 4)
+            .shadow(color: Color.black.opacity(0.22), radius: 10, x: 0, y: 4)
+    }
+
+    @ViewBuilder
+    public func socialCustomBackground(type: String?, value: String?) -> some View {
+        self.socialCustomBackground(bgType: type ?? "preset", bgValue: value ?? "")
     }
 
     @ViewBuilder
@@ -272,7 +327,7 @@ extension View {
                         AsyncImage(url: url) { phase in
                             if case .success(let img) = phase {
                                 img.resizable().scaledToFill()
-                                    .overlay(Color.white.opacity(0.76))
+                                    .overlay(Color.black.opacity(0.55))
                             } else {
                                 LivriaSocialPalette.gradientForPreset(bgValue)
                             }

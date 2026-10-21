@@ -367,12 +367,14 @@ public struct SocialProfileView: View {
 public struct MemberPublicProfileView: View {
     @EnvironmentObject private var social: LivriaSocialViewModel
     public let memberId: Int
+    public let initialSummary: SocialMemberSummary?
 
     @State private var detail: SocialMemberPublicProfileResponse? = nil
     @State private var isLoading: Bool = true
 
-    public init(memberId: Int) {
+    public init(memberId: Int, initialSummary: SocialMemberSummary? = nil) {
         self.memberId = memberId
+        self.initialSummary = initialSummary
     }
 
     public var body: some View {
