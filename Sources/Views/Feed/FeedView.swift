@@ -14,6 +14,8 @@ public struct FeedView: View {
     @State private var searchScope: Int = 0 // 0 = Membres, 1 = Livres
     @State private var isSearching: Bool = false
     @State private var selectedMemberForProfile: SocialMemberSummary? = nil
+    @State private var postBeingEdited: SocialFeedPost? = nil
+    @State private var postPendingDeletion: SocialFeedPost? = nil
     @State private var commentDrafts: [Int: String] = [:]
     @State private var expandedCommentsPostIds: Set<Int> = []
 
@@ -50,6 +52,10 @@ public struct FeedView: View {
             .navigationTitle("Livria Social")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    LivriaSocialHorizontalLogoView(height: 24)
+                }
+
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
                         social.isShowingCreatePostSheet = true
@@ -79,6 +85,31 @@ public struct FeedView: View {
             }
             .navigationDestination(item: $selectedMemberForProfile) { member in
                 MemberPublicProfileView(memberId: member.id, initialSummary: member)
+            }
+            .sheet(item: $postBeingEdited) { post in
+                EditPostSheetView(post: post)
+                    .environmentObject(social)
+            }
+            .alert(
+                "Supprimer cette publication ?",
+                isPresented: Binding(
+                    get: { postPendingDeletion != nil },
+                    set: { if !$0 { postPendingDeletion = nil } }
+                ),
+                presenting: postPendingDeletion
+            ) { targetPost in
+                Button("Annuler", role: .cancel) {
+                    postPendingDeletion = nil
+                }
+                Button("Supprimer", role: .destructive) {
+                    let pid = targetPost.id
+                    postPendingDeletion = nil
+                    Task {
+                        await social.deletePost(postId: pid)
+                    }
+                }
+            } message: { _ in
+                Text("Cette publication ainsi que ses commentaires seront définitivement supprimés du fil Livria Social.")
             }
         }
     }
@@ -259,16 +290,17 @@ public struct FeedView: View {
                                 .foregroundStyle(LivriaSocialPalette.gold)
                         }
                         Spacer()
-                        if let url = URL(string: book.storeUrl) {
-                            Link(destination: url) {
-                                Text("Boutique ↗")
-                                    .font(.system(size: 12, weight: .bold))
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 7)
-                                    .background(Capsule().fill(LivriaSocialPalette.primary))
-                                    .foregroundStyle(.white)
-                            }
+                        Button {
+                            LivriaSocialBookLinkOpener.openBook(bookId: book.id, storeUrl: book.storeUrl)
+                        } label: {
+                            Text("Boutique ↗")
+                                .font(.system(size: 12, weight: .bold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(Capsule().fill(LivriaSocialPalette.primary))
+                                .foregroundStyle(.white)
                         }
+                        .buttonStyle(.plain)
                     }
                     .socialCard(padding: 10)
                 }
@@ -467,6 +499,27 @@ public struct FeedView: View {
                     .padding(.vertical, 4)
                     .background(Capsule().fill(LivriaSocialPalette.primary.opacity(0.25)))
                     .foregroundStyle(.white)
+
+                if let currentUid = social.currentUser?.id,
+                   (post.userId == currentUid || post.author.id == currentUid) {
+                    Menu {
+                        Button {
+                            postBeingEdited = post
+                        } label: {
+                            Label("Modifier la publication", systemImage: "pencil")
+                        }
+                        Button(role: .destructive) {
+                            postPendingDeletion = post
+                        } label: {
+                            Label("Supprimer la publication", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
+                            .padding(.leading, 2)
+                    }
+                }
             }
 
             // Contenu texte
@@ -532,23 +585,28 @@ public struct FeedView: View {
                         }
                     }
                     Spacer()
-                    if let storeUrl = URL(string: book.storeUrl) {
-                        Link(destination: storeUrl) {
-                            VStack(spacing: 3) {
-                                Image(systemName: "bag.fill")
-                                    .font(.system(size: 15, weight: .bold))
-                                Text("Voir")
-                                    .font(.system(size: 11, weight: .bold))
-                            }
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 10)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(LivriaSocialPalette.primary))
-                            .foregroundStyle(.white)
+                    Button {
+                        LivriaSocialBookLinkOpener.openBook(bookId: book.id, storeUrl: book.storeUrl)
+                    } label: {
+                        VStack(spacing: 3) {
+                            Image(systemName: "bag.fill")
+                                .font(.system(size: 15, weight: .bold))
+                            Text("Voir")
+                                .font(.system(size: 11, weight: .bold))
                         }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 10)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(LivriaSocialPalette.primary))
+                        .foregroundStyle(.white)
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.07)))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    LivriaSocialBookLinkOpener.openBook(bookId: book.id, storeUrl: book.storeUrl)
+                }
             }
 
             // Liste de livres partagée
@@ -1437,6 +1495,287 @@ public struct CreatePostSheetView: View {
             moodBadge: selectedMood
         )
         if ok {
+            dismiss()
+        }
+    }
+}
+
+// MARK: - Feuille d'Édition d'une Publication Existante (Texte, Humeur, Livre Livria & Média)
+
+public struct EditPostSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var social: LivriaSocialViewModel
+
+    public let post: SocialFeedPost
+    public var onCompleted: (() -> Void)?
+
+    @State private var content: String
+    @State private var selectedMood: String
+    @State private var selectedBookId: Int
+    @State private var mediaUrl: String
+    @State private var mediaType: String
+    @State private var selectedPhotoPickerItem: PhotosPickerItem? = nil
+    @State private var localPhotoPreviewData: Data? = nil
+    @State private var isUploadingMedia: Bool = false
+    @State private var isSaving: Bool = false
+    @State private var showingDeleteConfirm: Bool = false
+
+    private let moods = [
+        "✨ Coup de cœur",
+        "📖 Lecture en cours",
+        "🔥 Pépite absolue",
+        "☕ Moment lecture cosy",
+        "🤔 Débat littéraire",
+        "🎉 Pile à lire"
+    ]
+
+    public init(post: SocialFeedPost, onCompleted: (() -> Void)? = nil) {
+        self.post = post
+        self.onCompleted = onCompleted
+        self._content = State(initialValue: post.content)
+        self._selectedMood = State(initialValue: post.moodBadge.isEmpty ? "✨ Coup de cœur" : post.moodBadge)
+        self._selectedBookId = State(initialValue: post.bookId ?? post.recommendedBook?.id ?? 0)
+        self._mediaUrl = State(initialValue: post.mediaUrl)
+        self._mediaType = State(initialValue: post.mediaType)
+    }
+
+    public var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    // 1. Humeur de lecture
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Humeur de la publication", systemImage: "sparkles")
+                            .font(.system(size: 14, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaSocialPalette.gold)
+
+                        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                            ForEach(moods, id: \.self) { mood in
+                                let active = selectedMood == mood
+                                Button {
+                                    selectedMood = mood
+                                } label: {
+                                    Text(mood)
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 9)
+                                        .padding(.horizontal, 8)
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                                .fill(
+                                                    active
+                                                        ? AnyShapeStyle(LivriaSocialPalette.brandGradient)
+                                                        : AnyShapeStyle(Color.white.opacity(0.07))
+                                                )
+                                        )
+                                        .foregroundStyle(.white)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    .socialCard(padding: 14)
+
+                    // 2. Contenu texte
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("Message de la publication", systemImage: "square.and.pencil")
+                                .font(.system(size: 14, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+                            Spacer()
+                            Text("\(content.count) car.")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(LivriaSocialPalette.textMuted)
+                        }
+
+                        TextField("Modifiez votre publication...", text: $content, axis: .vertical)
+                            .lineLimit(4...10)
+                            .font(.system(size: 14.5))
+                            .foregroundStyle(.white)
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(Color.white.opacity(0.08))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                            .stroke(LivriaSocialPalette.border, lineWidth: 1)
+                                    )
+                            )
+                    }
+                    .socialCard(padding: 14)
+
+                    // 3. Livre associé
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Livre Livria associé", systemImage: "book.closed.fill")
+                            .font(.system(size: 14, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaSocialPalette.gold)
+
+                        SocialBookPickerButtonCard(
+                            books: social.booksCatalog,
+                            selectedBookId: $selectedBookId,
+                            placeholderTitle: "Associer un livre Livria",
+                            placeholderSubtitle: "Ouvrir la recherche avec les couvertures des livres"
+                        )
+                    }
+                    .socialCard(padding: 14)
+
+                    // 4. Média (Photo / Vidéo)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("Photo / Média", systemImage: "photo.on.rectangle.angled")
+                                .font(.system(size: 14, weight: .black, design: .rounded))
+                                .foregroundStyle(LivriaSocialPalette.gold)
+                            Spacer()
+                            if !mediaUrl.isEmpty {
+                                Button(role: .destructive) {
+                                    mediaUrl = ""
+                                    mediaType = "none"
+                                    localPhotoPreviewData = nil
+                                } label: {
+                                    Label("Retirer le média", systemImage: "trash")
+                                        .font(.system(size: 11.5, weight: .bold))
+                                        .foregroundStyle(.red)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+
+                        PhotosPicker(
+                            selection: $selectedPhotoPickerItem,
+                            matching: .images,
+                            photoLibrary: .shared()
+                        ) {
+                            HStack(spacing: 10) {
+                                Image(systemName: "photo.badge.plus")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundStyle(LivriaSocialPalette.gold)
+                                Text(mediaUrl.isEmpty ? "Ajouter une photo depuis l'iPhone" : "Remplacer la photo depuis l'iPhone")
+                                    .font(.system(size: 13, weight: .bold))
+                                    .foregroundStyle(.white)
+                                Spacer()
+                                if isUploadingMedia {
+                                    ProgressView().tint(LivriaSocialPalette.gold)
+                                } else {
+                                    Image(systemName: "chevron.right")
+                                        .font(.caption.bold())
+                                        .foregroundStyle(LivriaSocialPalette.gold)
+                                }
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .socialCard(padding: 14)
+
+                    // Boutons d'action : Enregistrer ou Supprimer
+                    VStack(spacing: 10) {
+                        Button {
+                            Task {
+                                await saveEditedPost()
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                if isSaving {
+                                    ProgressView().tint(LivriaSocialPalette.ink)
+                                } else {
+                                    Image(systemName: "checkmark.seal.fill")
+                                    Text("Enregistrer les modifications")
+                                }
+                            }
+                            .font(.system(size: 15, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaSocialPalette.ink)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(Capsule().fill(LivriaSocialPalette.goldGradient))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(isSaving || isUploadingMedia)
+
+                        Button(role: .destructive) {
+                            showingDeleteConfirm = true
+                        } label: {
+                            Label("Supprimer cette publication", systemImage: "trash.fill")
+                                .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                                .foregroundStyle(.red)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Capsule().fill(Color.red.opacity(0.16)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(16)
+            }
+            .socialCustomBackground(bgType: "preset", bgValue: "aurora")
+            .navigationTitle("Modifier la publication")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Annuler") {
+                        dismiss()
+                    }
+                    .foregroundStyle(.white)
+                }
+            }
+            .onChange(of: selectedPhotoPickerItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    await handlePickedPhoto(item: newItem)
+                }
+            }
+            .alert("Supprimer cette publication ?", isPresented: $showingDeleteConfirm) {
+                Button("Annuler", role: .cancel) {}
+                Button("Supprimer", role: .destructive) {
+                    Task {
+                        await social.deletePost(postId: post.id)
+                        onCompleted?()
+                        dismiss()
+                    }
+                }
+            } message: {
+                Text("Cette action est irréversible.")
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func handlePickedPhoto(item: PhotosPickerItem) async {
+        isUploadingMedia = true
+        defer { isUploadingMedia = false }
+        do {
+            guard let rawData = try await item.loadTransferable(type: Data.self), !rawData.isEmpty else { return }
+            var uploadData = rawData
+            #if canImport(UIKit)
+            if let img = UIImage(data: rawData), let jpeg = img.jpegData(compressionQuality: 0.84) {
+                uploadData = jpeg
+            }
+            #endif
+            localPhotoPreviewData = uploadData
+            if let uploadedUrl = await social.uploadPhotoData(uploadData, fileExtension: "jpg") {
+                mediaUrl = uploadedUrl
+                mediaType = "image"
+            }
+        } catch {
+            social.showToast(error.localizedDescription)
+        }
+    }
+
+    private func saveEditedPost() async {
+        guard !isSaving else { return }
+        isSaving = true
+        defer { isSaving = false }
+
+        let ok = await social.updatePost(
+            postId: post.id,
+            content: content.trimmingCharacters(in: .whitespacesAndNewlines),
+            moodBadge: selectedMood,
+            bookId: selectedBookId > 0 ? selectedBookId : 0,
+            mediaUrl: mediaUrl,
+            mediaType: mediaUrl.isEmpty ? "none" : mediaType
+        )
+        if ok {
+            onCompleted?()
             dismiss()
         }
     }

@@ -485,6 +485,37 @@ public final class LivriaSocialViewModel: ObservableObject {
         }
     }
 
+    public func updatePost(
+        postId: Int,
+        content: String,
+        moodBadge: String,
+        bookId: Int? = nil,
+        mediaUrl: String? = nil,
+        mediaType: String? = nil
+    ) async -> Bool {
+        var payload = authPayload
+        payload["postId"] = postId
+        payload["content"] = content
+        payload["moodBadge"] = moodBadge
+        payload["bookId"] = bookId ?? 0
+        if let mediaUrl {
+            payload["mediaUrl"] = mediaUrl
+        }
+        if let mediaType {
+            payload["mediaType"] = mediaType
+        }
+        do {
+            let res = try await LivriaSocialAPIClient.shared.postRaw("/posts/update", body: payload)
+            let ok = (res["ok"] as? Bool) ?? true
+            showToast((res["message"] as? String) ?? "Publication modifiée !")
+            await refreshBootstrap()
+            return ok
+        } catch {
+            showToast(error.localizedDescription)
+            return false
+        }
+    }
+
     public func deletePost(postId: Int) async {
         var payload = authPayload
         payload["postId"] = postId
@@ -495,6 +526,10 @@ public final class LivriaSocialViewModel: ObservableObject {
         } catch {
             showToast(error.localizedDescription)
         }
+    }
+
+    public func openBookInStoreOrWeb(bookId: Int?, storeUrl: String = "") {
+        LivriaSocialBookLinkOpener.openBook(bookId: bookId, storeUrl: storeUrl)
     }
 
     // MARK: - 4. Listes de Livres Rémunérées (0,50 € à 1,00 € par achat généré)

@@ -274,22 +274,27 @@ private struct BookListCardView: View {
                                     .font(.system(size: 11, weight: .black))
                                     .foregroundStyle(LivriaSocialPalette.gold)
 
-                                if let storeUrl = URL(string: item.storeUrl) {
-                                    Link(destination: storeUrl) {
-                                        Text("Acheter")
-                                            .font(.system(size: 10, weight: .black))
-                                            .foregroundStyle(.white)
-                                            .frame(width: 84)
-                                            .padding(.vertical, 5)
-                                            .background(Capsule().fill(LivriaSocialPalette.primary))
-                                    }
+                                Button {
+                                    LivriaSocialBookLinkOpener.openBook(bookId: item.book.id, storeUrl: item.storeUrl)
+                                } label: {
+                                    Text("Acheter")
+                                        .font(.system(size: 10, weight: .black))
+                                        .foregroundStyle(.white)
+                                        .frame(width: 84)
+                                        .padding(.vertical, 5)
+                                        .background(Capsule().fill(LivriaSocialPalette.primary))
                                 }
+                                .buttonStyle(.plain)
                             }
                             .padding(8)
                             .background(
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .fill(Color.white.opacity(0.05))
                             )
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                LivriaSocialBookLinkOpener.openBook(bookId: item.book.id, storeUrl: item.storeUrl)
+                            }
                         }
                     }
                 }

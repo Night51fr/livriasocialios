@@ -1242,26 +1242,27 @@ private struct RichMessageBubbleView: View {
                         }
                     }
                 } else if message.attachmentType == "book", !message.attachmentTitle.isEmpty {
-                    HStack(spacing: 10) {
-                        Image(systemName: "book.closed.fill")
-                            .foregroundStyle(LivriaSocialPalette.gold)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(message.attachmentTitle)
-                                .font(.system(size: 12, weight: .black))
-                                .foregroundStyle(.white)
-                            Text(message.attachmentMeta)
-                                .font(.system(size: 11))
-                                .foregroundStyle(.white.opacity(0.8))
-                        }
-                        if let url = resolvedMediaURL(message.attachmentUrl) {
-                            Link(destination: url) {
-                                Image(systemName: "cart.fill.badge.plus")
-                                    .foregroundStyle(LivriaSocialPalette.gold)
+                    Button {
+                        LivriaSocialBookLinkOpener.openBook(bookId: message.bookId, storeUrl: message.attachmentUrl)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "book.closed.fill")
+                                .foregroundStyle(LivriaSocialPalette.gold)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(message.attachmentTitle)
+                                    .font(.system(size: 12, weight: .black))
+                                    .foregroundStyle(.white)
+                                Text(message.attachmentMeta)
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.white.opacity(0.8))
                             }
+                            Image(systemName: "cart.fill.badge.plus")
+                                .foregroundStyle(LivriaSocialPalette.gold)
                         }
+                        .padding(10)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.25)))
                     }
-                    .padding(10)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.black.opacity(0.25)))
+                    .buttonStyle(.plain)
                 } else if message.attachmentType == "link", let url = resolvedMediaURL(message.attachmentUrl) {
                     Link(destination: url) {
                         Label(message.attachmentTitle.isEmpty ? message.attachmentUrl : message.attachmentTitle, systemImage: "link.circle.fill")

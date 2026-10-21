@@ -149,6 +149,11 @@ public struct LivriaSocialLoadingSplashView: View {
                             .resizable()
                             .scaledToFit()
                             .frame(height: 82)
+                    } else if let horizontalImg = UIImage(named: "LivriaSocialLogoHorizontal") {
+                        Image(uiImage: horizontalImg)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 62)
                     } else {
                         fallbackLogoText
                     }

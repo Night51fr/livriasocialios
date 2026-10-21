@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Palette & Design System « Livria Social » (store.livria.social)
 
@@ -167,6 +170,94 @@ public struct LivriaSocialBrandLogoView: View {
                 .font(.system(size: compact ? 12 : 14, weight: .heavy, design: .rounded))
                 .foregroundStyle(LivriaSocialPalette.gold)
         }
+    }
+}
+
+// MARK: - Logo Horizontal « Livria Social » (Barre de navigation Accueil — identique à Livria Store)
+
+public struct LivriaSocialHorizontalLogoView: View {
+    public var height: CGFloat = 24
+
+    public init(height: CGFloat = 24) {
+        self.height = height
+    }
+
+    public var body: some View {
+        #if canImport(UIKit)
+        if let uiImage = UIImage(named: "LivriaSocialLogoHorizontal") {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFit()
+                .frame(height: height)
+                .accessibilityLabel("Livria Social")
+        } else {
+            fallbackLogoText
+        }
+        #else
+        fallbackLogoText
+        #endif
+    }
+
+    private var fallbackLogoText: some View {
+        Text("Livria Social")
+            .font(.system(size: 20, weight: .black, design: .rounded))
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [
+                        Color(red: 124.0 / 255.0, green: 77.0 / 255.0, blue: 1.0),
+                        Color(red: 1.0, green: 95.0 / 255.0, blue: 162.0 / 255.0)
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
+    }
+}
+
+// MARK: - Redirection Intelligente d'un Livre vers l'App « Livria Store » (si installée) ou vers le Site Web
+
+@MainActor
+public enum LivriaSocialBookLinkOpener {
+    public static func openBook(bookId: Int? = nil, storeUrl: String = "") {
+        var resolvedId: Int = bookId ?? 0
+        let trimmedUrl = storeUrl.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if resolvedId <= 0, !trimmedUrl.isEmpty, let parsedUrl = URL(string: trimmedUrl) {
+            let parts = parsedUrl.pathComponents.filter { $0 != "/" }
+            if let idx = parts.firstIndex(where: {
+                let p = $0.lowercased()
+                return p == "livre" || p == "book" || p == "books"
+            }), parts.count > idx + 1, let id = Int(parts[idx + 1]) {
+                resolvedId = id
+            } else if let last = parts.last, let id = Int(last) {
+                resolvedId = id
+            }
+        }
+
+        let fallbackWebString: String
+        if !trimmedUrl.isEmpty {
+            if trimmedUrl.hasPrefix("http://") || trimmedUrl.hasPrefix("https://") {
+                fallbackWebString = trimmedUrl
+            } else {
+                fallbackWebString = "https://livria.store\(trimmedUrl.hasPrefix("/") ? "" : "/")\(trimmedUrl)"
+            }
+        } else if resolvedId > 0 {
+            fallbackWebString = "https://livria.store/livre/\(resolvedId)"
+        } else {
+            fallbackWebString = "https://livria.store"
+        }
+
+        #if canImport(UIKit)
+        if resolvedId > 0, let appDeepLink = URL(string: "livriastore://book/\(resolvedId)") {
+            UIApplication.shared.open(appDeepLink, options: [:]) { opened in
+                if !opened, let webUrl = URL(string: fallbackWebString) {
+                    UIApplication.shared.open(webUrl, options: [:], completionHandler: nil)
+                }
+            }
+        } else if let webUrl = URL(string: fallbackWebString) {
+            UIApplication.shared.open(webUrl, options: [:], completionHandler: nil)
+        }
+        #endif
     }
 }
 

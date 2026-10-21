@@ -786,19 +786,24 @@ public struct MemberPublicProfileView: View {
                                     ScrollView(.horizontal, showsIndicators: false) {
                                         HStack(spacing: 12) {
                                             ForEach(readBooks) { book in
-                                                VStack(alignment: .leading, spacing: 5) {
-                                                    SocialBookCoverView(
-                                                        coverUrl: book.coverUrl,
-                                                        title: book.title,
-                                                        width: 78,
-                                                        height: 114
-                                                    )
-                                                    Text(book.title)
-                                                        .font(.system(size: 11, weight: .bold))
-                                                        .foregroundStyle(.white)
-                                                        .lineLimit(1)
-                                                        .frame(width: 78, alignment: .leading)
+                                                Button {
+                                                    LivriaSocialBookLinkOpener.openBook(bookId: book.id, storeUrl: book.storeUrl)
+                                                } label: {
+                                                    VStack(alignment: .leading, spacing: 5) {
+                                                        SocialBookCoverView(
+                                                            coverUrl: book.coverUrl,
+                                                            title: book.title,
+                                                            width: 78,
+                                                            height: 114
+                                                        )
+                                                        Text(book.title)
+                                                            .font(.system(size: 11, weight: .bold))
+                                                            .foregroundStyle(.white)
+                                                            .lineLimit(1)
+                                                            .frame(width: 78, alignment: .leading)
+                                                    }
                                                 }
+                                                .buttonStyle(.plain)
                                             }
                                         }
                                     }
@@ -857,6 +862,13 @@ private struct ProfileFeedPostCardView: View {
 
     @State private var commentDraft: String = ""
     @State private var isExpandedComments: Bool = false
+    @State private var isEditingPost: Bool = false
+    @State private var showingDeleteConfirm: Bool = false
+
+    private var isMyPost: Bool {
+        guard let uid = social.currentUser?.id else { return false }
+        return post.userId == uid || post.author.id == uid
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -893,6 +905,26 @@ private struct ProfileFeedPostCardView: View {
                     .padding(.vertical, 4)
                     .background(Capsule().fill(LivriaSocialPalette.primary.opacity(0.25)))
                     .foregroundStyle(.white)
+
+                if isMyPost {
+                    Menu {
+                        Button {
+                            isEditingPost = true
+                        } label: {
+                            Label("Modifier la publication", systemImage: "pencil")
+                        }
+                        Button(role: .destructive) {
+                            showingDeleteConfirm = true
+                        } label: {
+                            Label("Supprimer la publication", systemImage: "trash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle.fill")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
+                            .padding(.leading, 2)
+                    }
+                }
             }
 
             if !post.content.isEmpty {
@@ -947,23 +979,28 @@ private struct ProfileFeedPostCardView: View {
                             .foregroundStyle(LivriaSocialPalette.gold)
                     }
                     Spacer()
-                    if let storeUrl = URL(string: book.storeUrl) {
-                        Link(destination: storeUrl) {
-                            VStack(spacing: 3) {
-                                Image(systemName: "bag.fill")
-                                    .font(.system(size: 14, weight: .bold))
-                                Text("Voir")
-                                    .font(.system(size: 10.5, weight: .bold))
-                            }
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 9)
-                            .background(RoundedRectangle(cornerRadius: 12).fill(LivriaSocialPalette.primary))
-                            .foregroundStyle(.white)
+                    Button {
+                        LivriaSocialBookLinkOpener.openBook(bookId: book.id, storeUrl: book.storeUrl)
+                    } label: {
+                        VStack(spacing: 3) {
+                            Image(systemName: "bag.fill")
+                                .font(.system(size: 14, weight: .bold))
+                            Text("Voir")
+                                .font(.system(size: 10.5, weight: .bold))
                         }
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 9)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(LivriaSocialPalette.primary))
+                        .foregroundStyle(.white)
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(11)
                 .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.07)))
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    LivriaSocialBookLinkOpener.openBook(bookId: book.id, storeUrl: book.storeUrl)
+                }
             }
 
             Divider().overlay(Color.white.opacity(0.1))
@@ -1060,6 +1097,21 @@ private struct ProfileFeedPostCardView: View {
                         .stroke(LivriaSocialPalette.border, lineWidth: 1)
                 )
         )
+        .sheet(isPresented: $isEditingPost) {
+            EditPostSheetView(post: post, onCompleted: onChanged)
+                .environmentObject(social)
+        }
+        .alert("Supprimer cette publication ?", isPresented: $showingDeleteConfirm) {
+            Button("Annuler", role: .cancel) {}
+            Button("Supprimer", role: .destructive) {
+                Task {
+                    await social.deletePost(postId: post.id)
+                    onChanged?()
+                }
+            }
+        } message: {
+            Text("Cette publication ainsi que ses commentaires seront définitivement supprimés.")
+        }
     }
 
     private func reactionButton(emoji: String, count: Int, type: String) -> some View {
