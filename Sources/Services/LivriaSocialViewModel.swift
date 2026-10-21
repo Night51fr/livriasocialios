@@ -13,6 +13,9 @@ public final class LivriaSocialViewModel: ObservableObject {
     @Published public var activeToastMessage: String? = nil
     @Published public var isInitialBootstrapping: Bool = true
     @Published public var isLoading: Bool = false
+    @Published public var mobileAppMaintenanceEnabled: Bool = false
+    @Published public var isServerUnreachable: Bool = false
+    @Published public var serverUnreachableMessage: String = LivriaSocialAPIClient.serverOutageMessage
     @Published public var authErrorMessage: String? = nil
     @Published public var applePasswordSetupNotice: String? = nil
     @Published public var pendingAppleOnboardingUserId: String? = nil
@@ -72,6 +75,7 @@ public final class LivriaSocialViewModel: ObservableObject {
                 async let minSplashDelay: Void = {
                     try? await Task.sleep(nanoseconds: 1_500_000_000)
                 }()
+                await refreshMaintenanceStatus()
                 await refreshBootstrap(email: savedEmail, userId: savedUid)
                 _ = await minSplashDelay
                 withAnimation(.easeInOut(duration: 0.45)) {
@@ -82,11 +86,26 @@ public final class LivriaSocialViewModel: ObservableObject {
             self.isAuthenticated = false
             self.currentUser = nil
             Task {
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                async let minSplashDelay: Void = {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                }()
+                await refreshMaintenanceStatus()
+                _ = await minSplashDelay
                 withAnimation(.easeInOut(duration: 0.45)) {
                     self.isInitialBootstrapping = false
                 }
             }
+        }
+    }
+
+    public func refreshMaintenanceStatus() async {
+        do {
+            let maintenance = try await LivriaSocialAPIClient.shared.fetchMaintenanceStatus()
+            self.mobileAppMaintenanceEnabled = maintenance
+            self.isServerUnreachable = false
+        } catch {
+            self.serverUnreachableMessage = LivriaSocialAPIClient.serverOutageMessage
+            self.isServerUnreachable = true
         }
     }
 
@@ -159,6 +178,11 @@ public final class LivriaSocialViewModel: ObservableObject {
     // MARK: - 1. Synchronisation Globale (Uniquement si connecté à Viple Live ID)
 
     public func refreshBootstrap(email: String? = nil, userId: Int? = nil, filter: String? = nil) async {
+        await refreshMaintenanceStatus()
+        if mobileAppMaintenanceEnabled {
+            return
+        }
+
         let activeFilter = filter ?? feedFilter
         let activeEmail = (email ?? currentUser?.email ?? defaults.string(forKey: savedEmailKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let activeUid = userId ?? currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
@@ -175,6 +199,9 @@ public final class LivriaSocialViewModel: ObservableObject {
                 userId: activeUid > 0 ? activeUid : nil,
                 filter: activeFilter
             )
+            if let maint = boot.mobileAppMaintenanceEnabled, maint {
+                self.mobileAppMaintenanceEnabled = true
+            }
             self.currentUser = boot.user
             self.isAuthenticated = true
             self.posts = boot.posts
@@ -184,6 +211,7 @@ public final class LivriaSocialViewModel: ObservableObject {
             self.topMembers = boot.topMembers
             self.booksCatalog = boot.booksCatalog
             self.backgroundPresets = boot.backgroundPresets
+            self.isServerUnreachable = false
 
             let today = Self.todayDateString()
             if !boot.games.canClaimDaily {
@@ -198,8 +226,14 @@ public final class LivriaSocialViewModel: ObservableObject {
             if hasClaimedDailyToday { syncedGames.canClaimDaily = false }
             if hasSpunWheelToday { syncedGames.canSpinWheel = false }
             self.games = syncedGames
+        } catch let nsErr as NSError where nsErr.code == 401 {
+            self.isAuthenticated = false
+            self.currentUser = nil
         } catch {
             print("[LivriaSocial.iOS] Erreur bootstrap: \(error.localizedDescription)")
+            self.serverUnreachableMessage = LivriaSocialAPIClient.serverOutageMessage
+            self.isServerUnreachable = true
+            self.showToast(LivriaSocialAPIClient.serverOutageMessage)
         }
     }
 

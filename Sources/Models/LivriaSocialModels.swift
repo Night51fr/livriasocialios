@@ -18,6 +18,7 @@ public enum LivriaSocialAppConfig: Sendable {
 
 public struct SocialBootstrapResponse: Codable, Sendable {
     public var ok: Bool
+    public var mobileAppMaintenanceEnabled: Bool?
     public var user: SocialUserProfile
     public var posts: [SocialFeedPost]
     public var lists: [SocialBookListModel]
@@ -27,6 +28,26 @@ public struct SocialBootstrapResponse: Codable, Sendable {
     public var booksCatalog: [SocialBookItem]
     public var backgroundPresets: [SocialBackgroundPreset]
     public var games: SocialGamesState
+}
+
+public struct SocialMaintenanceStatusResponse: Codable, Sendable {
+    public var ok: Bool?
+    public var mobileAppMaintenanceEnabled: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case ok, mobileAppMaintenanceEnabled
+    }
+
+    public init(ok: Bool? = true, mobileAppMaintenanceEnabled: Bool = false) {
+        self.ok = ok
+        self.mobileAppMaintenanceEnabled = mobileAppMaintenanceEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try? c.decodeIfPresent(Bool.self, forKey: .ok)
+        mobileAppMaintenanceEnabled = (try? c.decode(Bool.self, forKey: .mobileAppMaintenanceEnabled)) ?? false
+    }
 }
 
 public struct SocialAuthResponse: Codable, Sendable {

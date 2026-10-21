@@ -8,13 +8,22 @@ import UIKit
 
 public struct SocialMainTabView: View {
     @EnvironmentObject private var social: LivriaSocialViewModel
+    @Environment(\.scenePhase) private var scenePhase
 
     public init() {}
 
     public var body: some View {
         ZStack {
-            if social.isInitialBootstrapping {
+            if social.mobileAppMaintenanceEnabled {
+                LivriaSocialMaintenanceView()
+                    .environmentObject(social)
+                    .transition(.opacity)
+            } else if social.isInitialBootstrapping {
                 LivriaSocialLoadingSplashView()
+                    .environmentObject(social)
+                    .transition(.opacity)
+            } else if social.isServerUnreachable && social.posts.isEmpty {
+                LivriaSocialServerOutageView()
                     .environmentObject(social)
                     .transition(.opacity)
             } else if !social.hasAcceptedTermsOfUse {
@@ -34,6 +43,13 @@ public struct SocialMainTabView: View {
         .sheet(isPresented: $social.isShowingTermsReviewSheet) {
             LivriaSocialLegalTermsView(isFirstLaunchGate: false)
                 .environmentObject(social)
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                Task {
+                    await social.refreshMaintenanceStatus()
+                }
+            }
         }
         .onOpenURL { url in
             social.handleIncomingURL(url)
@@ -75,6 +91,11 @@ public struct SocialMainTabView: View {
                     .tag(4)
             }
             .tint(LivriaSocialPalette.coral)
+            .onChange(of: social.selectedTab) { _, _ in
+                Task {
+                    await social.refreshMaintenanceStatus()
+                }
+            }
 
             if let toast = social.activeToastMessage {
                 HStack(spacing: 10) {
@@ -236,6 +257,112 @@ public struct LivriaSocialLoadingSplashView: View {
                     endPoint: .trailing
                 )
             )
+    }
+}
+
+// MARK: - Écran « Maintenance en cours » (Synchronisé en direct avec /admin sur Livria Store)
+
+public struct LivriaSocialMaintenanceView: View {
+    @EnvironmentObject private var social: LivriaSocialViewModel
+
+    public init() {}
+
+    public var body: some View {
+        ZStack {
+            Color.white
+                .ignoresSafeArea()
+
+            Text("Maintenance en cours")
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+                .foregroundStyle(Color(red: 0.11, green: 0.10, blue: 0.18))
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+        }
+        .task {
+            while !Task.isCancelled && social.mobileAppMaintenanceEnabled {
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                await social.refreshMaintenanceStatus()
+            }
+        }
+    }
+}
+
+// MARK: - Écran Serveur Indisponible / Timeout 20s / Erreur 503 (« Oups, le serveur a le moral dans les chaussette, il revient bientot »)
+
+public struct LivriaSocialServerOutageView: View {
+    @EnvironmentObject private var social: LivriaSocialViewModel
+    @State private var isRetrying: Bool = false
+
+    public init() {}
+
+    public var body: some View {
+        ZStack {
+            Color.white
+                .ignoresSafeArea()
+
+            VStack(spacing: 22) {
+                #if canImport(UIKit)
+                if let uiImage = UIImage(named: "LivriaLogoTransparent") {
+                    Image(uiImage: uiImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 68)
+                } else if let horizontalImg = UIImage(named: "LivriaSocialLogoHorizontal") {
+                    Image(uiImage: horizontalImg)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(height: 54)
+                }
+                #endif
+
+                Image(systemName: "heart.text.square.fill")
+                    .font(.system(size: 44, weight: .bold))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [LivriaSocialPalette.primary, LivriaSocialPalette.coral],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+
+                Text("Oups, le serveur a le moral dans les chaussette, il revient bientot")
+                    .font(.system(size: 19, weight: .bold, design: .rounded))
+                    .foregroundStyle(Color(red: 0.11, green: 0.10, blue: 0.18))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 28)
+
+                Button {
+                    isRetrying = true
+                    Task {
+                        await social.refreshMaintenanceStatus()
+                        await social.refreshBootstrap()
+                        isRetrying = false
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isRetrying {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                        }
+                        Text("Réessayer")
+                            .font(.system(size: 15, weight: .bold, design: .rounded))
+                    }
+                    .padding(.horizontal, 28)
+                    .padding(.vertical, 13)
+                    .background(
+                        LinearGradient(
+                            colors: [LivriaSocialPalette.primary, LivriaSocialPalette.coral],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+                }
+                .disabled(isRetrying)
+            }
+        }
     }
 }
 

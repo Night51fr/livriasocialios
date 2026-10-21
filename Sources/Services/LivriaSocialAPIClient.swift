@@ -7,15 +7,69 @@ public final class LivriaSocialAPIClient {
     public static let shared = LivriaSocialAPIClient()
 
     public let baseAPI = "https://livriasocial.viplenetwork.com/api/mobile/v1"
+    public let storeBaseAPI = "https://livria.store/api/mobile/v1"
     private let session: URLSession
     private let decoder: JSONDecoder
 
+    public static let serverOutageMessage = "Oups, le serveur a le moral dans les chaussette, il revient bientot"
+
     public init() {
         let cfg = URLSessionConfiguration.default
-        cfg.timeoutIntervalForRequest = 25
-        cfg.timeoutIntervalForResource = 45
+        cfg.timeoutIntervalForRequest = 20
+        cfg.timeoutIntervalForResource = 20
         self.session = URLSession(configuration: cfg)
         self.decoder = JSONDecoder()
+    }
+
+    private func performRequest(_ req: URLRequest) async throws -> (Data, HTTPURLResponse) {
+        do {
+            let (data, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse else {
+                throw NSError(
+                    domain: "LivriaSocialServerOutage",
+                    code: 503,
+                    userInfo: [NSLocalizedDescriptionKey: Self.serverOutageMessage]
+                )
+            }
+            if http.statusCode >= 500 {
+                throw NSError(
+                    domain: "LivriaSocialServerOutage",
+                    code: http.statusCode,
+                    userInfo: [NSLocalizedDescriptionKey: Self.serverOutageMessage]
+                )
+            }
+            return (data, http)
+        } catch let nsErr as NSError where nsErr.domain == "LivriaSocialServerOutage" {
+            throw nsErr
+        } catch {
+            throw NSError(
+                domain: "LivriaSocialServerOutage",
+                code: 503,
+                userInfo: [NSLocalizedDescriptionKey: Self.serverOutageMessage]
+            )
+        }
+    }
+
+    public func fetchMaintenanceStatus() async throws -> Bool {
+        var storeMaintenance = false
+        if let storeUrl = URL(string: "\(storeBaseAPI)/payment-settings") {
+            var storeReq = URLRequest(url: storeUrl)
+            storeReq.timeoutInterval = 20
+            storeReq.httpMethod = "GET"
+            storeReq.setValue("application/json", forHTTPHeaderField: "Accept")
+            if let (sData, sResp) = try? await session.data(for: storeReq),
+               let sHttp = sResp as? HTTPURLResponse,
+               (200...299).contains(sHttp.statusCode),
+               let decoded = try? decoder.decode(SocialMaintenanceStatusResponse.self, from: sData) {
+                if decoded.mobileAppMaintenanceEnabled {
+                    return true
+                }
+                storeMaintenance = decoded.mobileAppMaintenanceEnabled
+            }
+        }
+
+        let socialStatus: SocialMaintenanceStatusResponse = try await getJSON("/maintenance-status")
+        return storeMaintenance || socialStatus.mobileAppMaintenanceEnabled
     }
 
     public func getJSON<T: Decodable>(_ path: String, queryItems: [URLQueryItem] = []) async throws -> T {
@@ -27,19 +81,24 @@ public final class LivriaSocialAPIClient {
             throw URLError(.badURL)
         }
         var req = URLRequest(url: url)
+        req.timeoutInterval = 20
         req.httpMethod = "GET"
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaSocial-iOS/26.0 (Bundle/store.livria.social; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
 
-        let (data, response) = try await session.data(for: req)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+        let (data, http) = try await performRequest(req)
+        if !(200...299).contains(http.statusCode) {
             if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let msg = dict["error"] as? String {
                 throw NSError(domain: "LivriaSocialAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: msg])
             }
-            throw NSError(domain: "LivriaSocialAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Erreur serveur HTTP \(http.statusCode)"])
+            throw NSError(domain: "LivriaSocialAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: Self.serverOutageMessage])
         }
-        return try decoder.decode(T.self, from: data)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw NSError(domain: "LivriaSocialServerOutage", code: 503, userInfo: [NSLocalizedDescriptionKey: Self.serverOutageMessage])
+        }
     }
 
     public func postJSON<T: Decodable>(_ path: String, body: [String: Any]) async throws -> T {
@@ -47,19 +106,20 @@ public final class LivriaSocialAPIClient {
             throw URLError(.badURL)
         }
         var req = URLRequest(url: url)
+        req.timeoutInterval = 20
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaSocial-iOS/26.0 (Bundle/store.livria.social; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await session.data(for: req)
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
+        let (data, http) = try await performRequest(req)
+        if !(200...299).contains(http.statusCode) {
             if let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let msg = dict["error"] as? String {
                 throw NSError(domain: "LivriaSocialAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: msg])
             }
-            throw NSError(domain: "LivriaSocialAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "Erreur serveur HTTP \(http.statusCode)"])
+            throw NSError(domain: "LivriaSocialAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: Self.serverOutageMessage])
         }
         return try decoder.decode(T.self, from: data)
     }
@@ -69,16 +129,17 @@ public final class LivriaSocialAPIClient {
             throw URLError(.badURL)
         }
         var req = URLRequest(url: url)
+        req.timeoutInterval = 20
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("LivriaSocial-iOS/26.0 (Bundle/store.livria.social; iOS 18.0+)", forHTTPHeaderField: "User-Agent")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, response) = try await session.data(for: req)
+        let (data, http) = try await performRequest(req)
         let dict = (try? JSONSerialization.jsonObject(with: data) as? [String: Any]) ?? [:]
-        if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-            let msg = (dict["error"] as? String) ?? "Erreur serveur (\(http.statusCode))"
+        if !(200...299).contains(http.statusCode) {
+            let msg = (dict["error"] as? String) ?? Self.serverOutageMessage
             throw NSError(domain: "LivriaSocialAPI", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: msg])
         }
         return dict
