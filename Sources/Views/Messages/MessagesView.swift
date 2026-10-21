@@ -428,6 +428,20 @@ public struct ConversationThreadView: View {
         )
         .navigationTitle(otherDisplayName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                NavigationLink {
+                    MemberPublicProfileView(memberId: otherUserId)
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "person.crop.circle")
+                        Text("Profil")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                    }
+                    .foregroundStyle(LivriaSocialPalette.gold)
+                }
+            }
+        }
         .task {
             await reloadMessages()
         }

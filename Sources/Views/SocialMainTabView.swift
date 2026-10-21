@@ -1,7 +1,10 @@
 import SwiftUI
 import AuthenticationServices
+#if canImport(UIKit)
+import UIKit
+#endif
 
-// MARK: - Navigation Principale « Livria Social » (CGU au 1er lancement + Connexion Viple Live ID obligatoire)
+// MARK: - Navigation Principale « Livria Social » (Écran de Chargement + CGU au 1er lancement + Connexion Viple Live ID obligatoire)
 
 public struct SocialMainTabView: View {
     @EnvironmentObject private var social: LivriaSocialViewModel
@@ -9,15 +12,22 @@ public struct SocialMainTabView: View {
     public init() {}
 
     public var body: some View {
-        Group {
-            if !social.hasAcceptedTermsOfUse {
+        ZStack {
+            if social.isInitialBootstrapping {
+                LivriaSocialLoadingSplashView()
+                    .environmentObject(social)
+                    .transition(.opacity)
+            } else if !social.hasAcceptedTermsOfUse {
                 LivriaSocialLegalTermsView(isFirstLaunchGate: true)
                     .environmentObject(social)
+                    .transition(.opacity)
             } else if !social.isAuthenticated || social.currentUser == nil {
                 SocialMandatoryAuthView()
                     .environmentObject(social)
+                    .transition(.opacity)
             } else {
                 authenticatedTabExperience
+                    .transition(.opacity)
             }
         }
         .preferredColorScheme(.dark)
@@ -114,6 +124,113 @@ public struct SocialMainTabView: View {
             }
             .preferredColorScheme(.dark)
         }
+    }
+}
+
+// MARK: - Écran de Chargement Livria Social (Logo « Livria » sur fond transparent + Texte + Icône de chargement animée)
+
+public struct LivriaSocialLoadingSplashView: View {
+    @EnvironmentObject private var social: LivriaSocialViewModel
+    @State private var isSpinning: Bool = false
+    @State private var isPulsing: Bool = false
+
+    public init() {}
+
+    public var body: some View {
+        ZStack {
+            VStack(spacing: 26) {
+                Spacer()
+
+                // 1. Logo « Livria » au-dessus (fond transparent)
+                Group {
+                    #if canImport(UIKit)
+                    if let uiImage = UIImage(named: "LivriaLogoTransparent") {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(height: 82)
+                    } else {
+                        fallbackLogoText
+                    }
+                    #else
+                    fallbackLogoText
+                    #endif
+                }
+                .scaleEffect(isPulsing ? 1.03 : 0.97)
+                .animation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true), value: isPulsing)
+
+                // 2. Texte d'accroche au centre
+                Text("Mais quelle pépite, va t'on encore me partager !?")
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 34)
+
+                // 3. Icône de chargement animée en dessous de tout ça
+                ZStack {
+                    Circle()
+                        .stroke(LivriaSocialPalette.primary.opacity(0.22), lineWidth: 4.5)
+                        .frame(width: 54, height: 54)
+
+                    Circle()
+                        .trim(from: 0.08, to: 0.78)
+                        .stroke(
+                            AngularGradient(
+                                colors: [
+                                    LivriaSocialPalette.primary,
+                                    LivriaSocialPalette.coral,
+                                    LivriaSocialPalette.gold,
+                                    LivriaSocialPalette.primary
+                                ],
+                                center: .center
+                            ),
+                            style: StrokeStyle(lineWidth: 4.5, lineCap: .round)
+                        )
+                        .frame(width: 54, height: 54)
+                        .rotationEffect(.degrees(isSpinning ? 360 : 0))
+                        .animation(.linear(duration: 1.0).repeatForever(autoreverses: false), value: isSpinning)
+
+                    Image(systemName: "book.pages.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(
+                            LinearGradient(
+                                colors: [LivriaSocialPalette.primary, LivriaSocialPalette.coral],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                        .scaleEffect(isPulsing ? 1.12 : 0.90)
+                        .animation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true), value: isPulsing)
+                }
+                .padding(.top, 6)
+
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .socialCustomBackground(
+            bgType: social.currentUser?.pageBackgroundType ?? "preset",
+            bgValue: social.currentUser?.pageBackgroundValue ?? "aurora"
+        )
+        .onAppear {
+            isSpinning = true
+            isPulsing = true
+        }
+    }
+
+    private var fallbackLogoText: some View {
+        Text("Livria")
+            .font(.system(size: 56, weight: .black, design: .rounded))
+            .foregroundStyle(
+                LinearGradient(
+                    colors: [
+                        LivriaSocialPalette.primary,
+                        LivriaSocialPalette.coral
+                    ],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+            )
     }
 }
 

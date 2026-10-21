@@ -1,4 +1,5 @@
 import SwiftUI
+import AVKit
 
 // MARK: - Onglet 5 : Mon Profil & Studio de Personnalisation Complète (Arrière-plan, Couleurs, Opacité & Viple Live ID)
 
@@ -24,11 +25,18 @@ public struct SocialProfileView: View {
 
     public init() {}
 
+    private var myPublishedPosts: [SocialFeedPost] {
+        guard let uid = social.currentUser?.id else { return [] }
+        return social.posts.filter { $0.userId == uid || $0.author.id == uid }
+    }
+
     public var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 16) {
                     profileHeaderCard
+
+                    myPostsSectionCard
 
                     vipleLiveIdAccountCard
 
@@ -186,11 +194,58 @@ public struct SocialProfileView: View {
 
             HStack(spacing: 10) {
                 profileStatBox(label: "Points XP", value: "\(xp) XP", icon: "bolt.fill", color: LivriaSocialPalette.accent)
+                profileStatBox(label: "Publications", value: "\(myPublishedPosts.count)", icon: "text.bubble.fill", color: LivriaSocialPalette.coral)
                 profileStatBox(label: "Cagnotte", value: String(format: "%.2f €", user?.affiliateBalanceEur ?? 0), icon: "eurosign.circle.fill", color: LivriaSocialPalette.emerald)
                 profileStatBox(label: "Mes Listes", value: "\(social.myLists.count)", icon: "books.vertical.fill", color: LivriaSocialPalette.gold)
             }
         }
         .padding(16)
+        .socialCard(opacity: cardOpacity / 100.0)
+    }
+
+    // MARK: - Mes Publications sur Mon Profil
+
+    private var myPostsSectionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("MES PUBLICATIONS (\(myPublishedPosts.count))", systemImage: "sparkles.rectangle.stack.fill")
+                    .font(.system(size: 12, weight: .black, design: .rounded))
+                    .foregroundStyle(LivriaSocialPalette.gold)
+                Spacer()
+                Button {
+                    social.isShowingCreatePostSheet = true
+                } label: {
+                    Label("Publier", systemImage: "plus.circle.fill")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(LivriaSocialPalette.brandGradient))
+                        .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if myPublishedPosts.isEmpty {
+                VStack(spacing: 8) {
+                    Text("Vous n'avez pas encore publié de contenu.")
+                        .font(.system(size: 13.5, weight: .bold))
+                        .foregroundStyle(.white)
+                    Text("Partagez un livre coup de cœur, une photo ou une vidéo pour animer votre profil (+15 XP) !")
+                        .font(.system(size: 12))
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+            } else {
+                VStack(spacing: 12) {
+                    ForEach(myPublishedPosts) { post in
+                        ProfileFeedPostCardView(post: post)
+                    }
+                }
+            }
+        }
+        .padding(15)
         .socialCard(opacity: cardOpacity / 100.0)
     }
 
@@ -497,7 +552,7 @@ public struct SocialProfileView: View {
     }
 }
 
-// MARK: - Vue Publique du Profil Personnalisé d'un Membre
+// MARK: - Vue Publique du Profil Personnalisé d'un Membre (Identité, Publications, Listes & Livres)
 
 public struct MemberPublicProfileView: View {
     @EnvironmentObject private var social: LivriaSocialViewModel
@@ -506,67 +561,106 @@ public struct MemberPublicProfileView: View {
 
     @State private var detail: SocialMemberPublicProfileResponse? = nil
     @State private var isLoading: Bool = true
+    @State private var selectedSection: Int = 0 // 0 = Publications, 1 = Listes & Livres
 
     public init(memberId: Int, initialSummary: SocialMemberSummary? = nil) {
         self.memberId = memberId
         self.initialSummary = initialSummary
     }
 
+    private var memberPosts: [SocialFeedPost] {
+        let fromDetail = detail?.posts ?? []
+        if !fromDetail.isEmpty {
+            return fromDetail
+        }
+        return social.posts.filter { $0.userId == memberId || $0.author.id == memberId }
+    }
+
+    private var memberLists: [SocialBookListModel] {
+        let fromDetail = detail?.lists ?? []
+        if !fromDetail.isEmpty {
+            return fromDetail
+        }
+        return social.lists.filter { $0.userId == memberId || $0.creator.id == memberId }
+    }
+
     public var body: some View {
         ScrollView {
-            if isLoading {
+            if isLoading && detail == nil && initialSummary == nil {
                 ProgressView("Chargement de l'univers du lecteur...")
                     .tint(LivriaSocialPalette.primary)
                     .padding(.top, 48)
-            } else if let member = detail?.member {
+            } else {
+                let displayName = detail?.member.displayName ?? initialSummary?.displayName ?? "Lecteur Livria"
+                let avatarUrl = detail?.member.avatarUrl ?? initialSummary?.avatarUrl ?? ""
+                let accentColor = detail?.member.accentColor ?? initialSummary?.accentColor ?? "#7c4dff"
+                let handle = detail?.member.handle ?? initialSummary?.handle ?? "@lecteur"
+                let level = detail?.member.level ?? initialSummary?.level ?? 1
+                let xp = detail?.member.xpPoints ?? initialSummary?.xp ?? 100
+                let badge = detail?.member.customTitleBadge ?? (initialSummary?.isLivriaPlus == true ? "👑 Membre Looby+" : "🌟 Explorateur")
+                let motto = detail?.member.motto ?? initialSummary?.motto ?? ""
+                let bio = detail?.member.bio ?? initialSummary?.bio ?? ""
+                let cardOpacity = Double(detail?.member.cardOpacity ?? 88) / 100.0
+
                 VStack(spacing: 16) {
-                    // Carte d'identité du membre
+                    // 1. Carte d'identité du membre
                     VStack(spacing: 12) {
                         SocialAvatarRingView(
-                            name: member.displayName,
-                            avatarUrl: member.avatarUrl,
-                            accentHex: member.accentColor,
-                            size: 76
+                            name: displayName,
+                            avatarUrl: avatarUrl,
+                            level: level,
+                            accentHex: accentColor,
+                            size: 78
                         )
 
-                        Text(member.displayName)
+                        Text(displayName)
                             .font(.system(size: 22, weight: .black, design: .rounded))
                             .foregroundStyle(.white)
 
-                        Text("\(member.handle) • Niveau \(member.level) (\(member.xpPoints) XP)")
+                        Text("\(handle) • Niveau \(level) (\(xp) XP)")
                             .font(.system(size: 12, weight: .bold))
                             .foregroundStyle(LivriaSocialPalette.gold)
 
-                        if !member.customTitleBadge.isEmpty {
-                            Text(member.customTitleBadge)
+                        if !badge.isEmpty {
+                            Text(badge)
                                 .font(.system(size: 12, weight: .black))
                                 .foregroundStyle(.white)
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 5)
-                                .background(Capsule().fill(Color(hex: member.accentColor).opacity(0.35)))
+                                .background(Capsule().fill(Color(hex: accentColor).opacity(0.35)))
                         }
 
-                        if !member.motto.isEmpty {
-                            Text("« \(member.motto) »")
+                        if !motto.isEmpty {
+                            Text("« \(motto) »")
                                 .font(.system(size: 13, design: .serif))
                                 .italic()
                                 .foregroundStyle(.white.opacity(0.9))
+                                .multilineTextAlignment(.center)
                         }
 
-                        if !member.bio.isEmpty {
-                            Text(member.bio)
+                        if !bio.isEmpty {
+                            Text(bio)
                                 .font(.system(size: 13))
                                 .foregroundStyle(LivriaSocialPalette.textMuted)
                                 .multilineTextAlignment(.center)
                         }
 
+                        // Statistiques du profil
+                        HStack(spacing: 10) {
+                            memberStatPill(value: "\(memberPosts.count)", label: "Posts", icon: "text.bubble.fill")
+                            memberStatPill(value: "\(memberLists.count)", label: "Listes", icon: "books.vertical.fill")
+                            memberStatPill(value: "\(detail?.booksReadCount ?? 0)", label: "Lus", icon: "book.closed.fill")
+                            memberStatPill(value: "\(xp)", label: "XP", icon: "bolt.fill")
+                        }
+                        .padding(.top, 4)
+
                         NavigationLink {
                             ConversationThreadView(
-                                otherUserId: member.id,
-                                otherDisplayName: member.displayName,
-                                otherHandle: member.handle,
-                                otherAvatarUrl: member.avatarUrl,
-                                otherAccentColor: member.accentColor
+                                otherUserId: memberId,
+                                otherDisplayName: displayName,
+                                otherHandle: handle,
+                                otherAvatarUrl: avatarUrl,
+                                otherAccentColor: accentColor
                             )
                         } label: {
                             Label("Envoyer un message privé", systemImage: "paperplane.fill")
@@ -576,43 +670,143 @@ public struct MemberPublicProfileView: View {
                                 .padding(.vertical, 10)
                                 .background(Capsule().fill(LivriaSocialPalette.brandGradient))
                         }
+                        .padding(.top, 2)
                     }
                     .padding(18)
                     .frame(maxWidth: .infinity)
-                    .socialCard(opacity: Double(member.cardOpacity) / 100.0)
+                    .socialCard(opacity: cardOpacity)
 
-                    // Listes du membre
-                    if let lists = detail?.lists, !lists.isEmpty {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("📚 LISTES DE LECTURE DE \(member.displayName.uppercased())")
-                                .font(.system(size: 11, weight: .black, design: .rounded))
-                                .foregroundStyle(LivriaSocialPalette.gold)
+                    // 2. Sélecteur de section : Publications du profil | Listes & Lectures
+                    SocialSegmentedPillBar(
+                        items: [
+                            (0, "Publications (\(memberPosts.count))", "sparkles.rectangle.stack.fill"),
+                            (1, "Listes (\(memberLists.count))", "books.vertical.fill")
+                        ],
+                        selection: $selectedSection
+                    )
 
-                            ForEach(lists) { list in
-                                HStack {
-                                    Text(list.themeEmoji)
-                                        .font(.system(size: 22))
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(list.title)
-                                            .font(.system(size: 14, weight: .bold))
-                                            .foregroundStyle(.white)
-                                        Text("\(list.booksCount) livres recommandés")
-                                            .font(.system(size: 11))
-                                            .foregroundStyle(LivriaSocialPalette.textMuted)
-                                    }
-                                    Spacer()
-                                    if let url = URL(string: list.shareUrl) {
-                                        Link("Voir", destination: url)
-                                            .font(.system(size: 12, weight: .black))
-                                            .foregroundStyle(LivriaSocialPalette.accent)
-                                    }
+                    if selectedSection == 0 {
+                        // Publications (Posts) du profil en question
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Label("PUBLICATIONS DE \(displayName.uppercased())", systemImage: "text.bubble.fill")
+                                    .font(.system(size: 11.5, weight: .black, design: .rounded))
+                                    .foregroundStyle(LivriaSocialPalette.gold)
+                                Spacer()
+                                if isLoading {
+                                    ProgressView()
+                                        .tint(LivriaSocialPalette.gold)
+                                        .scaleEffect(0.8)
                                 }
-                                .padding(10)
-                                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+                            }
+
+                            if memberPosts.isEmpty && !isLoading {
+                                VStack(spacing: 10) {
+                                    Image(systemName: "text.bubble")
+                                        .font(.system(size: 36))
+                                        .foregroundStyle(LivriaSocialPalette.gold)
+                                    Text("\(displayName) n'a pas encore publié de post")
+                                        .font(.system(size: 15, weight: .bold, design: .rounded))
+                                        .foregroundStyle(.white)
+                                    Text("Les recommandations de livres, photos et vidéos de ce lecteur s'afficheront ici dès leur publication.")
+                                        .font(.system(size: 12.5))
+                                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                                        .multilineTextAlignment(.center)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 22)
+                                .socialCard(opacity: cardOpacity)
+                            } else {
+                                ForEach(memberPosts) { post in
+                                    ProfileFeedPostCardView(
+                                        post: post,
+                                        onChanged: {
+                                            Task {
+                                                detail = await social.fetchMemberProfile(memberId: memberId)
+                                            }
+                                        }
+                                    )
+                                }
                             }
                         }
-                        .padding(14)
-                        .socialCard(opacity: Double(member.cardOpacity) / 100.0)
+                    } else {
+                        // Listes de lecture & Livres lus du membre
+                        VStack(alignment: .leading, spacing: 14) {
+                            if !memberLists.isEmpty {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("📚 LISTES DE LECTURE DE \(displayName.uppercased())")
+                                        .font(.system(size: 11, weight: .black, design: .rounded))
+                                        .foregroundStyle(LivriaSocialPalette.gold)
+
+                                    ForEach(memberLists) { list in
+                                        HStack {
+                                            Text(list.themeEmoji)
+                                                .font(.system(size: 22))
+                                            VStack(alignment: .leading, spacing: 2) {
+                                                Text(list.title)
+                                                    .font(.system(size: 14, weight: .bold))
+                                                    .foregroundStyle(.white)
+                                                Text("\(list.booksCount) livres recommandés")
+                                                    .font(.system(size: 11))
+                                                    .foregroundStyle(LivriaSocialPalette.textMuted)
+                                            }
+                                            Spacer()
+                                            if let url = URL(string: list.shareUrl) {
+                                                Link("Voir", destination: url)
+                                                    .font(.system(size: 12, weight: .black))
+                                                    .foregroundStyle(LivriaSocialPalette.accent)
+                                            }
+                                        }
+                                        .padding(10)
+                                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+                                    }
+                                }
+                                .padding(14)
+                                .socialCard(opacity: cardOpacity)
+                            } else {
+                                VStack(spacing: 8) {
+                                    Image(systemName: "books.vertical")
+                                        .font(.system(size: 32))
+                                        .foregroundStyle(LivriaSocialPalette.gold)
+                                    Text("Aucune liste publique créée pour le moment")
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(.white)
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(20)
+                                .socialCard(opacity: cardOpacity)
+                            }
+
+                            if let readBooks = detail?.readBooks, !readBooks.isEmpty {
+                                VStack(alignment: .leading, spacing: 10) {
+                                    Text("📖 BIBLIOTHÈQUE DE \(displayName.uppercased())")
+                                        .font(.system(size: 11, weight: .black, design: .rounded))
+                                        .foregroundStyle(LivriaSocialPalette.gold)
+
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 12) {
+                                            ForEach(readBooks) { book in
+                                                VStack(alignment: .leading, spacing: 5) {
+                                                    SocialBookCoverView(
+                                                        coverUrl: book.coverUrl,
+                                                        title: book.title,
+                                                        width: 78,
+                                                        height: 114
+                                                    )
+                                                    Text(book.title)
+                                                        .font(.system(size: 11, weight: .bold))
+                                                        .foregroundStyle(.white)
+                                                        .lineLimit(1)
+                                                        .frame(width: 78, alignment: .leading)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding(14)
+                                .socialCard(opacity: cardOpacity)
+                            }
+                        }
                     }
                 }
                 .padding(16)
@@ -622,13 +816,271 @@ public struct MemberPublicProfileView: View {
             type: detail?.member.pageBackgroundType,
             value: detail?.member.pageBackgroundValue
         )
-        .navigationTitle(detail?.member.displayName ?? "Profil Lecteur")
+        .navigationTitle(detail?.member.displayName ?? initialSummary?.displayName ?? "Profil Lecteur")
         .navigationBarTitleDisplayMode(.inline)
         .task {
             isLoading = true
             detail = await social.fetchMemberProfile(memberId: memberId)
             isLoading = false
         }
+        .refreshable {
+            detail = await social.fetchMemberProfile(memberId: memberId)
+        }
+    }
+
+    private func memberStatPill(value: String, label: String, icon: String) -> some View {
+        VStack(spacing: 3) {
+            HStack(spacing: 4) {
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(LivriaSocialPalette.gold)
+                Text(value)
+                    .font(.system(size: 14, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+            Text(label)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(LivriaSocialPalette.textMuted)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.07)))
+    }
+}
+
+// MARK: - Carte d'une Publication Affichée dans un Profil (Texte, Photo, Vidéo, Livre Livria, Réactions & Commentaires)
+
+private struct ProfileFeedPostCardView: View {
+    @EnvironmentObject private var social: LivriaSocialViewModel
+    let post: SocialFeedPost
+    var onChanged: (() -> Void)? = nil
+
+    @State private var commentDraft: String = ""
+    @State private var isExpandedComments: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                SocialAvatarRingView(
+                    avatarUrl: post.author.avatarUrl,
+                    displayName: post.author.displayName,
+                    level: post.author.level,
+                    accentHex: post.author.accentColor,
+                    size: 40
+                )
+
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(spacing: 5) {
+                        Text(post.author.displayName)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundStyle(.white)
+                        if post.author.isLivriaPlus {
+                            Image(systemName: "crown.fill")
+                                .font(.caption2)
+                                .foregroundStyle(LivriaSocialPalette.gold)
+                        }
+                    }
+                    Text(post.createdAt)
+                        .font(.system(size: 11))
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                }
+
+                Spacer()
+
+                Text(post.moodBadge)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 4)
+                    .background(Capsule().fill(LivriaSocialPalette.primary.opacity(0.25)))
+                    .foregroundStyle(.white)
+            }
+
+            if !post.content.isEmpty {
+                Text(post.content)
+                    .font(.system(size: 14.5))
+                    .foregroundStyle(.white.opacity(0.95))
+                    .lineSpacing(3)
+            }
+
+            if !post.mediaUrl.isEmpty, let mediaURL = URL(string: post.mediaUrl.hasPrefix("http") ? post.mediaUrl : "https://livriasocial.viplenetwork.com\(post.mediaUrl)") {
+                let lowerUrl = post.mediaUrl.lowercased()
+                let isVideoPost = post.mediaType == "video"
+                    || post.postType == "video"
+                    || lowerUrl.hasSuffix(".mp4")
+                    || lowerUrl.hasSuffix(".mov")
+                    || lowerUrl.hasSuffix(".m4v")
+
+                if isVideoPost {
+                    VideoPlayer(player: AVPlayer(url: mediaURL))
+                        .frame(height: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                } else {
+                    AsyncImage(url: mediaURL) { phase in
+                        if case .success(let image) = phase {
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(maxHeight: 220)
+                                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+                    }
+                }
+            }
+
+            if let book = post.recommendedBook {
+                HStack(spacing: 12) {
+                    SocialBookCoverView(coverUrl: book.coverUrl, title: book.title, width: 60, height: 88)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("📖 Livre recommandé sur Livria Store")
+                            .font(.system(size: 10.5, weight: .bold))
+                            .foregroundStyle(LivriaSocialPalette.gold)
+                        Text(book.title)
+                            .font(.system(size: 14, weight: .bold, design: .serif))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+                        Text("par \(book.author)")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
+                        Text(String(format: "%.2f € • %@", book.price, book.availabilityBadge))
+                            .font(.system(size: 12.5, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaSocialPalette.gold)
+                    }
+                    Spacer()
+                    if let storeUrl = URL(string: book.storeUrl) {
+                        Link(destination: storeUrl) {
+                            VStack(spacing: 3) {
+                                Image(systemName: "bag.fill")
+                                    .font(.system(size: 14, weight: .bold))
+                                Text("Voir")
+                                    .font(.system(size: 10.5, weight: .bold))
+                            }
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 9)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(LivriaSocialPalette.primary))
+                            .foregroundStyle(.white)
+                        }
+                    }
+                }
+                .padding(11)
+                .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.07)))
+            }
+
+            Divider().overlay(Color.white.opacity(0.1))
+
+            HStack(spacing: 8) {
+                reactionButton(emoji: "❤️", count: post.likesCount, type: "like")
+                reactionButton(emoji: "🔥", count: post.fireCount, type: "fire")
+                reactionButton(emoji: "📖", count: post.bookLoveCount, type: "book")
+                reactionButton(emoji: "👏", count: post.clapCount, type: "clap")
+
+                Spacer()
+
+                Button {
+                    isExpandedComments.toggle()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "bubble.left.fill")
+                            .symbolRenderingMode(.monochrome)
+                        Text("\(post.comments.count)")
+                    }
+                    .font(.system(size: 12, weight: .bold))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.white.opacity(0.1)))
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if isExpandedComments || !post.comments.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(post.comments.suffix(4)) { comment in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(String(comment.authorName.prefix(1)).uppercased())
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(.white)
+                                .frame(width: 22, height: 22)
+                                .background(Circle().fill(LivriaSocialPalette.colorFromHex(comment.authorAccent)))
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                HStack {
+                                    Text(comment.authorName)
+                                        .font(.system(size: 11.5, weight: .bold))
+                                        .foregroundStyle(.white)
+                                    Spacer()
+                                    Text(comment.createdAt)
+                                        .font(.system(size: 10))
+                                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                                }
+                                Text(comment.content)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.white.opacity(0.9))
+                            }
+                        }
+                        .padding(8)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.06)))
+                    }
+
+                    HStack(spacing: 8) {
+                        TextField("Ajouter un commentaire (+5 XP)...", text: $commentDraft)
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 8)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
+
+                        Button {
+                            let text = commentDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !text.isEmpty else { return }
+                            commentDraft = ""
+                            Task {
+                                await social.addComment(postId: post.id, content: text)
+                                onChanged?()
+                            }
+                        } label: {
+                            Image(systemName: "paperplane.fill")
+                                .symbolRenderingMode(.monochrome)
+                                .font(.system(size: 12.5, weight: .bold))
+                                .padding(8)
+                                .background(Circle().fill(LivriaSocialPalette.primary))
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Color.white.opacity(0.07))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .stroke(LivriaSocialPalette.border, lineWidth: 1)
+                )
+        )
+    }
+
+    private func reactionButton(emoji: String, count: Int, type: String) -> some View {
+        Button {
+            Task {
+                await social.reactToPost(postId: post.id, reactionType: type)
+                onChanged?()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(emoji)
+                Text("\(count)")
+                    .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+            }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(Capsule().fill(Color.white.opacity(0.08)))
+            .overlay(Capsule().stroke(LivriaSocialPalette.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 }
 

@@ -11,6 +11,7 @@ public final class LivriaSocialViewModel: ObservableObject {
     @Published public var isShowingCreatePostSheet: Bool = false
     @Published public var isShowingCreateListSheet: Bool = false
     @Published public var activeToastMessage: String? = nil
+    @Published public var isInitialBootstrapping: Bool = true
     @Published public var isLoading: Bool = false
     @Published public var authErrorMessage: String? = nil
     @Published public var applePasswordSetupNotice: String? = nil
@@ -68,11 +69,24 @@ public final class LivriaSocialViewModel: ObservableObject {
             self.isAuthenticated = true
             self.syncLocalDailyLocks(userId: savedUid)
             Task {
+                async let minSplashDelay: Void = {
+                    try? await Task.sleep(nanoseconds: 1_500_000_000)
+                }()
                 await refreshBootstrap(email: savedEmail, userId: savedUid)
+                _ = await minSplashDelay
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    self.isInitialBootstrapping = false
+                }
             }
         } else {
             self.isAuthenticated = false
             self.currentUser = nil
+            Task {
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    self.isInitialBootstrapping = false
+                }
+            }
         }
     }
 

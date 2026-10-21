@@ -212,9 +212,15 @@ private struct BookListCardView: View {
                         }
                     }
 
-                    Text("Par \(list.creatorName) (\(list.creatorHandle)) • \(list.booksCount) livres")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                    NavigationLink {
+                        MemberPublicProfileView(memberId: list.creator.id, initialSummary: list.creator)
+                    } label: {
+                        Text("Par \(list.creatorName) (\(list.creatorHandle)) • \(list.booksCount) livres")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
+                            .underline()
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 Spacer()
