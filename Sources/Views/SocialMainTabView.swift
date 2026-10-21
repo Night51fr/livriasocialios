@@ -77,5 +77,23 @@ public struct SocialMainTabView: View {
             CreateBookListSheetView()
                 .environmentObject(social)
         }
+        .sheet(item: $social.deepLinkedMemberProfile) { member in
+            NavigationStack {
+                MemberPublicProfileView(memberId: member.id, initialSummary: member)
+                    .environmentObject(social)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Fermer") {
+                                social.deepLinkedMemberProfile = nil
+                            }
+                            .foregroundStyle(.white)
+                        }
+                    }
+            }
+            .preferredColorScheme(.dark)
+        }
+        .onOpenURL { url in
+            social.handleIncomingURL(url)
+        }
     }
 }

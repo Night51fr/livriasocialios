@@ -31,6 +31,9 @@ public final class LivriaSocialViewModel: ObservableObject {
     // Recherche de membres
     @Published public var searchedMembers: [SocialMemberSummary] = []
 
+    // Profil membre ouvert par lien direct depuis Livria Store (livriasocial://profile/{id})
+    @Published public var deepLinkedMemberProfile: SocialMemberSummary? = nil
+
     private let defaults = UserDefaults.standard
     private let savedEmailKey = "livria.social.ios.vipleLiveEmail"
     private let savedUserIdKey = "livria.social.ios.vipleLiveUserId"
@@ -416,6 +419,49 @@ public final class LivriaSocialViewModel: ObservableObject {
             await refreshBootstrap()
         } catch {
             showToast(error.localizedDescription)
+        }
+    }
+
+    // MARK: - 8. Ouverture Directe d'un Profil depuis Livria Store (livriasocial://profile/{id})
+
+    public func handleIncomingURL(_ url: URL) {
+        guard let scheme = url.scheme?.lowercased(), scheme == "livriasocial" else { return }
+
+        let host = url.host?.lowercased() ?? ""
+        let pathParts = url.pathComponents.filter { $0 != "/" }
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+
+        var extractedId: Int? = nil
+        if (host == "profile" || host == "member" || host == "u"), let first = pathParts.first, let id = Int(first) {
+            extractedId = id
+        } else if let first = pathParts.first, (first == "profile" || first == "u" || first == "member"), pathParts.count > 1, let id = Int(pathParts[1]) {
+            extractedId = id
+        } else if let idStr = queryItems.first(where: { $0.name == "id" || $0.name == "memberId" })?.value, let id = Int(idStr) {
+            extractedId = id
+        } else if let id = Int(host) {
+            extractedId = id
+        }
+
+        guard let memberId = extractedId, memberId > 0 else { return }
+        let nameParam = queryItems.first(where: { $0.name == "name" })?.value ?? "Lecteur Livria"
+
+        if let existing = topMembers.first(where: { $0.id == memberId }) ?? searchedMembers.first(where: { $0.id == memberId }) {
+            self.deepLinkedMemberProfile = existing
+        } else {
+            self.deepLinkedMemberProfile = SocialMemberSummary(
+                id: memberId,
+                displayName: nameParam,
+                email: nil,
+                bio: "",
+                motto: "",
+                favoriteGenres: "",
+                accentColor: "#7C3AED",
+                avatarUrl: "",
+                xp: 100,
+                level: 1,
+                isLivriaPlus: false,
+                profileUrl: "https://livriasocial.viplenetwork.com/u/\(memberId)"
+            )
         }
     }
 }
