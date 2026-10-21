@@ -138,15 +138,13 @@ public struct SocialCrossAppDiscoverResponse: Codable, Sendable {
     public var hasAccount: Bool { hasDetectedAccount }
 
     enum CodingKeys: String, CodingKey {
-        case ok, hasDetectedAccount, hasAccount, account
+        case ok, hasDetectedAccount, account
     }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         ok = (try? c.decode(Bool.self, forKey: .ok)) ?? false
-        hasDetectedAccount = (try? c.decode(Bool.self, forKey: .hasDetectedAccount))
-            ?? (try? c.decode(Bool.self, forKey: .hasAccount))
-            ?? false
+        hasDetectedAccount = (try? c.decode(Bool.self, forKey: .hasDetectedAccount)) ?? false
         account = try? c.decodeIfPresent(SocialCrossAppAccount.self, forKey: .account)
     }
 }
