@@ -282,6 +282,7 @@ public struct SocialBackgroundPreset: Codable, Identifiable, Equatable, Sendable
 public struct SocialGamesState: Codable, Equatable, Sendable {
     public var streakDays: Int
     public var canClaimDaily: Bool
+    public var canSpinWheel: Bool
     public var xp: Int
     public var level: Int
     public var xpInLevel: Int
@@ -292,7 +293,45 @@ public struct SocialGamesState: Codable, Equatable, Sendable {
     public var xpPoints: Int { xp }
     public var dailyStreak: Int { streakDays }
     public var affiliateBalanceEur: Double { affiliateEarnings + cashbackBalance }
-    public var canSpinWheel: Bool { true }
+
+    enum CodingKeys: String, CodingKey {
+        case streakDays, canClaimDaily, canSpinWheel, xp, level, xpInLevel, loyaltyPoints, cashbackBalance, affiliateEarnings
+    }
+
+    public init(
+        streakDays: Int = 1,
+        canClaimDaily: Bool = true,
+        canSpinWheel: Bool = true,
+        xp: Int = 100,
+        level: Int = 1,
+        xpInLevel: Int = 0,
+        loyaltyPoints: Int = 0,
+        cashbackBalance: Double = 0,
+        affiliateEarnings: Double = 0
+    ) {
+        self.streakDays = streakDays
+        self.canClaimDaily = canClaimDaily
+        self.canSpinWheel = canSpinWheel
+        self.xp = xp
+        self.level = level
+        self.xpInLevel = xpInLevel
+        self.loyaltyPoints = loyaltyPoints
+        self.cashbackBalance = cashbackBalance
+        self.affiliateEarnings = affiliateEarnings
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        streakDays = (try? c.decode(Int.self, forKey: .streakDays)) ?? 1
+        canClaimDaily = (try? c.decode(Bool.self, forKey: .canClaimDaily)) ?? true
+        canSpinWheel = (try? c.decode(Bool.self, forKey: .canSpinWheel)) ?? true
+        xp = (try? c.decode(Int.self, forKey: .xp)) ?? 100
+        level = (try? c.decode(Int.self, forKey: .level)) ?? 1
+        xpInLevel = (try? c.decode(Int.self, forKey: .xpInLevel)) ?? 0
+        loyaltyPoints = (try? c.decode(Int.self, forKey: .loyaltyPoints)) ?? 0
+        cashbackBalance = (try? c.decode(Double.self, forKey: .cashbackBalance)) ?? 0
+        affiliateEarnings = (try? c.decode(Double.self, forKey: .affiliateEarnings)) ?? 0
+    }
 }
 
 // MARK: - Jeux Littéraires de Livria (Quiz Culturel & Mot Mystère — 100% Sendable)

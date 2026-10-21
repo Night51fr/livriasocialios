@@ -130,14 +130,14 @@ public struct SocialGamesHubView: View {
         )
     }
 
-    // MARK: - Section 0 : Bonus Quotidien & Roue de la Fortune
+    // MARK: - Section 0 : Bonus Quotidien & Roue de la Fortune (Strictement 1 fois par jour)
 
     private var dailyBonusAndWheelSection: some View {
-        let canClaimDaily = social.games?.canClaimDaily ?? true
-        let canSpinWheel = social.games?.canSpinWheel ?? true
+        let canClaimDaily = social.canClaimDailyBonusToday
+        let canSpinWheel = social.canSpinFortuneWheelToday
 
         return VStack(spacing: 16) {
-            // Bonus Quotidien
+            // Bonus Quotidien (1 par jour)
             HStack(spacing: 14) {
                 Image(systemName: "gift.fill")
                     .font(.system(size: 30))
@@ -149,7 +149,9 @@ public struct SocialGamesHubView: View {
                     Text("Bonus Quotidien de Lecture")
                         .font(.system(size: 16, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
-                    Text("Réclamez votre coffre chaque jour pour augmenter votre série et gagner jusqu'à +60 XP.")
+                    Text(canClaimDaily
+                         ? "Réclamez votre coffre du jour (1 fois par jour) pour augmenter votre série et gagner +35 XP."
+                         : "Récompense du jour déjà récupérée ! Revenez demain pour poursuivre votre série.")
                         .font(.system(size: 12))
                         .foregroundStyle(LivriaSocialPalette.textMuted)
                 }
@@ -157,9 +159,10 @@ public struct SocialGamesHubView: View {
                 Spacer()
 
                 Button {
+                    guard canClaimDaily else { return }
                     Task { await social.claimDailyGameBonus() }
                 } label: {
-                    Text(canClaimDaily ? "Réclamer" : "Reçu ✓")
+                    Text(canClaimDaily ? "Réclamer" : "Reçu aujourd'hui ✓")
                         .font(.system(size: 12, weight: .black))
                         .foregroundStyle(canClaimDaily ? LivriaSocialPalette.ink : .white.opacity(0.6))
                         .padding(.horizontal, 14)
@@ -177,13 +180,15 @@ public struct SocialGamesHubView: View {
             .padding(16)
             .socialCard()
 
-            // Roue de la Fortune Littéraire
+            // Roue de la Fortune Littéraire (1 lancer par jour)
             VStack(spacing: 16) {
                 Text("🎡 Roue de la Fortune Livria")
                     .font(.system(size: 18, weight: .black, design: .rounded))
                     .foregroundStyle(.white)
 
-                Text("1 lancer gratuit par jour : tentez de remporter des XP ou des bonus en euros crédités sur votre cagnotte Livria !")
+                Text(canSpinWheel
+                     ? "1 lancer gratuit par jour : tentez de remporter des XP ou des bonus en euros crédités sur votre cagnotte Livria !"
+                     : "Vous avez déjà utilisé votre lancer quotidien aujourd'hui. Revenez demain pour tenter à nouveau votre chance !")
                     .font(.system(size: 12))
                     .foregroundStyle(LivriaSocialPalette.textMuted)
                     .multilineTextAlignment(.center)
@@ -231,7 +236,7 @@ public struct SocialGamesHubView: View {
                 }
 
                 Button {
-                    guard !isSpinningWheel else { return }
+                    guard canSpinWheel && !isSpinningWheel else { return }
                     isSpinningWheel = true
                     withAnimation(.easeOut(duration: 1.8)) {
                         wheelRotation += 1080 + Double(Int.random(in: 45...315))
@@ -244,8 +249,8 @@ public struct SocialGamesHubView: View {
                     }
                 } label: {
                     Label(
-                        canSpinWheel ? "Tourner la Roue Gratuite" : "Déjà tournée aujourd'hui",
-                        systemImage: "arrow.triangle.2.circlepath.circle.fill"
+                        canSpinWheel ? "Tourner la Roue Gratuite (1/jour)" : "Lancer quotidien utilisé — Revenez demain",
+                        systemImage: canSpinWheel ? "arrow.triangle.2.circlepath.circle.fill" : "checkmark.seal.fill"
                     )
                     .font(.system(size: 14, weight: .black, design: .rounded))
                     .foregroundStyle(.white)

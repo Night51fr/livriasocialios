@@ -7,15 +7,23 @@ import SwiftUI
 public final class LivriaSocialViewModel: ObservableObject {
     @Published public var selectedTab: Int = 0
     @Published public var isShowingAuthSheet: Bool = false
+    @Published public var isShowingTermsReviewSheet: Bool = false
     @Published public var isShowingCreatePostSheet: Bool = false
     @Published public var isShowingCreateListSheet: Bool = false
     @Published public var activeToastMessage: String? = nil
     @Published public var isLoading: Bool = false
     @Published public var authErrorMessage: String? = nil
 
-    // Session Viple Live ID (partagée avec Livria Store)
+    // Conditions Générales d'Utilisation (obligatoires au 1er lancement)
+    @Published public var hasAcceptedTermsOfUse: Bool = false
+
+    // Session Viple Live ID obligatoire pour utiliser Livria Social
     @Published public var isAuthenticated: Bool = false
     @Published public var currentUser: SocialUserProfile? = nil
+
+    // Verrous quotidiens locaux + serveur (1 bonus quotidien / jour et 1 roue / jour)
+    @Published public var hasClaimedDailyToday: Bool = false
+    @Published public var hasSpunWheelToday: Bool = false
 
     // Données LivriaSocial synchronisées avec https://livriasocial.viplenetwork.com/api/mobile/v1/bootstrap
     @Published public var feedFilter: String = "all"
@@ -35,18 +43,73 @@ public final class LivriaSocialViewModel: ObservableObject {
     @Published public var deepLinkedMemberProfile: SocialMemberSummary? = nil
 
     private let defaults = UserDefaults.standard
-    private let savedEmailKey = "livria.social.ios.vipleLiveEmail"
-    private let savedUserIdKey = "livria.social.ios.vipleLiveUserId"
+    private let acceptedTermsKey = "livria.social.ios.acceptedCGU.v1"
+    private let savedEmailKey = "livria.social.ios.authEmail.v2"
+    private let savedUserIdKey = "livria.social.ios.authUserId.v2"
+    private let savedTokenKey = "livria.social.ios.authToken.v2"
 
     public init() {
-        let savedEmail = defaults.string(forKey: savedEmailKey)
+        // Nettoyage des anciennes clés v1 qui pouvaient contenir le compte fallback par défaut
+        defaults.removeObject(forKey: "livria.social.ios.vipleLiveEmail")
+        defaults.removeObject(forKey: "livria.social.ios.vipleLiveUserId")
+
+        self.hasAcceptedTermsOfUse = defaults.bool(forKey: acceptedTermsKey)
+
+        let savedEmail = defaults.string(forKey: savedEmailKey) ?? ""
         let savedUid = defaults.integer(forKey: savedUserIdKey)
-        if let savedEmail, !savedEmail.isEmpty {
+        let savedToken = defaults.string(forKey: savedTokenKey) ?? ""
+
+        if !savedEmail.isEmpty && savedUid > 0 && !savedToken.isEmpty {
             self.isAuthenticated = true
+            self.syncLocalDailyLocks(userId: savedUid)
+            Task {
+                await refreshBootstrap(email: savedEmail, userId: savedUid)
+            }
+        } else {
+            self.isAuthenticated = false
+            self.currentUser = nil
         }
-        Task {
-            await refreshBootstrap(email: savedEmail, userId: savedUid > 0 ? savedUid : nil)
+    }
+
+    public func acceptTermsOfUse() {
+        defaults.set(true, forKey: acceptedTermsKey)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+            hasAcceptedTermsOfUse = true
         }
+    }
+
+    private static func todayDateString() -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = TimeZone(identifier: "Europe/Paris") ?? .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+
+    private func dailyClaimKey(for userId: Int) -> String {
+        "livria.social.ios.dailyClaim.\(userId)"
+    }
+
+    private func wheelSpinKey(for userId: Int) -> String {
+        "livria.social.ios.wheelSpin.\(userId)"
+    }
+
+    private func syncLocalDailyLocks(userId: Int) {
+        let today = Self.todayDateString()
+        let claimedDate = defaults.string(forKey: dailyClaimKey(for: userId)) ?? ""
+        let spunDate = defaults.string(forKey: wheelSpinKey(for: userId)) ?? ""
+        self.hasClaimedDailyToday = (claimedDate == today)
+        self.hasSpunWheelToday = (spunDate == today)
+    }
+
+    public var canClaimDailyBonusToday: Bool {
+        if hasClaimedDailyToday { return false }
+        return games?.canClaimDaily ?? true
+    }
+
+    public var canSpinFortuneWheelToday: Bool {
+        if hasSpunWheelToday { return false }
+        return games?.canSpinWheel ?? true
     }
 
     public var unreadMessagesCount: Int {
@@ -74,20 +137,27 @@ public final class LivriaSocialViewModel: ObservableObject {
         ]
     }
 
-    // MARK: - 1. Synchronisation Globale
+    // MARK: - 1. Synchronisation Globale (Uniquement si connecté à Viple Live ID)
 
     public func refreshBootstrap(email: String? = nil, userId: Int? = nil, filter: String? = nil) async {
         let activeFilter = filter ?? feedFilter
-        let activeEmail = email ?? defaults.string(forKey: savedEmailKey) ?? currentUser?.email
-        let activeUid = userId ?? currentUser?.id
+        let activeEmail = (email ?? currentUser?.email ?? defaults.string(forKey: savedEmailKey) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let activeUid = userId ?? currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+
+        guard !activeEmail.isEmpty || activeUid > 0 else {
+            self.isAuthenticated = false
+            self.currentUser = nil
+            return
+        }
 
         do {
             let boot = try await LivriaSocialAPIClient.shared.fetchBootstrap(
-                email: activeEmail,
-                userId: (activeUid ?? 0) > 0 ? activeUid : nil,
+                email: activeEmail.isEmpty ? nil : activeEmail,
+                userId: activeUid > 0 ? activeUid : nil,
                 filter: activeFilter
             )
             self.currentUser = boot.user
+            self.isAuthenticated = true
             self.posts = boot.posts
             self.lists = boot.lists
             self.myLists = boot.myLists
@@ -95,13 +165,26 @@ public final class LivriaSocialViewModel: ObservableObject {
             self.topMembers = boot.topMembers
             self.booksCatalog = boot.booksCatalog
             self.backgroundPresets = boot.backgroundPresets
-            self.games = boot.games
+
+            let today = Self.todayDateString()
+            if !boot.games.canClaimDaily {
+                defaults.set(today, forKey: dailyClaimKey(for: boot.user.id))
+            }
+            if !boot.games.canSpinWheel {
+                defaults.set(today, forKey: wheelSpinKey(for: boot.user.id))
+            }
+            syncLocalDailyLocks(userId: boot.user.id)
+
+            var syncedGames = boot.games
+            if hasClaimedDailyToday { syncedGames.canClaimDaily = false }
+            if hasSpunWheelToday { syncedGames.canSpinWheel = false }
+            self.games = syncedGames
         } catch {
             print("[LivriaSocial.iOS] Erreur bootstrap: \(error.localizedDescription)")
         }
     }
 
-    // MARK: - 2. Authentification Viple Live ID
+    // MARK: - 2. Authentification Viple Live ID Obligatoire
 
     public func signIn(email: String, password: String) async {
         isLoading = true
@@ -113,13 +196,15 @@ public final class LivriaSocialViewModel: ObservableObject {
                 "password": password
             ])
             guard res.ok, let user = res.user else {
-                authErrorMessage = res.error ?? "Identifiant Viple Live ID incorrect."
+                authErrorMessage = res.error ?? "Identifiant Viple Live ID ou mot de passe incorrect."
                 return
             }
             self.currentUser = user
             self.isAuthenticated = true
             defaults.set(user.email, forKey: savedEmailKey)
             defaults.set(user.id, forKey: savedUserIdKey)
+            defaults.set(res.token ?? "ls-token-\(user.id)", forKey: savedTokenKey)
+            syncLocalDailyLocks(userId: user.id)
             isShowingAuthSheet = false
             showToast("Connecté sur Livria Social (\(user.displayName)) !")
             await refreshBootstrap(email: user.email, userId: user.id)
@@ -146,6 +231,8 @@ public final class LivriaSocialViewModel: ObservableObject {
             self.isAuthenticated = true
             defaults.set(user.email, forKey: savedEmailKey)
             defaults.set(user.id, forKey: savedUserIdKey)
+            defaults.set(res.token ?? "ls-token-\(user.id)", forKey: savedTokenKey)
+            syncLocalDailyLocks(userId: user.id)
             isShowingAuthSheet = false
             showToast("Bienvenue sur Livria Social, \(user.displayName) !")
             await refreshBootstrap(email: user.email, userId: user.id)
@@ -157,11 +244,14 @@ public final class LivriaSocialViewModel: ObservableObject {
     public func signOut() {
         defaults.removeObject(forKey: savedEmailKey)
         defaults.removeObject(forKey: savedUserIdKey)
+        defaults.removeObject(forKey: savedTokenKey)
+        currentUser = nil
         isAuthenticated = false
-        showToast("Déconnecté de votre session Viple Live ID.")
-        Task {
-            await refreshBootstrap(email: nil, userId: nil)
-        }
+        posts = []
+        myLists = []
+        conversations = []
+        games = nil
+        showToast("Vous êtes déconnecté de votre compte Viple Live ID.")
     }
 
     // MARK: - 3. Fil d'Actualité : Publications, Réactions & Commentaires
@@ -383,19 +473,48 @@ public final class LivriaSocialViewModel: ObservableObject {
         }
     }
 
-    // MARK: - 7. Espace Jeux de Livria (Bonus Quotidien, Roue de la Fortune, Quiz & Mot Mystère)
+    // MARK: - 7. Espace Jeux de Livria (1 Bonus Quotidien / jour & 1 Roue de la Fortune / jour)
 
     public func claimDailyGameBonus() async {
+        guard canClaimDailyBonusToday else {
+            showToast("Vous avez déjà récupéré votre bonus quotidien aujourd'hui. Revenez demain !")
+            return
+        }
+        let uid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        let today = Self.todayDateString()
+
+        // Verrouillage immédiat pour empêcher les clics multiples
+        hasClaimedDailyToday = true
+        games?.canClaimDaily = false
+        if uid > 0 {
+            defaults.set(today, forKey: dailyClaimKey(for: uid))
+        }
+
         do {
             let res = try await LivriaSocialAPIClient.shared.postRaw("/games/daily-claim", body: authPayload)
             showToast((res["message"] as? String) ?? "Bonus quotidien réclamé !")
             await refreshBootstrap()
         } catch {
             showToast(error.localizedDescription)
+            await refreshBootstrap()
         }
     }
 
     public func spinFortuneWheel() async -> String? {
+        guard canSpinFortuneWheelToday else {
+            showToast("Vous avez déjà lancé la Roue de la Fortune aujourd'hui. Revenez demain !")
+            return nil
+        }
+        let uid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        let today = Self.todayDateString()
+
+        // Verrouillage immédiat pour empêcher les lancers multiples
+        hasSpunWheelToday = true
+        games?.canSpinWheel = false
+        if uid > 0 {
+            defaults.set(today, forKey: wheelSpinKey(for: uid))
+        }
+
         do {
             let res = try await LivriaSocialAPIClient.shared.postRaw("/games/wheel-spin", body: authPayload)
             let reward = (res["prizeLabel"] as? String) ?? (res["message"] as? String) ?? "Gain crédité !"
@@ -404,6 +523,7 @@ public final class LivriaSocialViewModel: ObservableObject {
             return reward
         } catch {
             showToast(error.localizedDescription)
+            await refreshBootstrap()
             return nil
         }
     }

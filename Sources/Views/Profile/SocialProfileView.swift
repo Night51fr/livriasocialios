@@ -249,6 +249,29 @@ public struct SocialProfileView: View {
                     }
                 }
             }
+
+            Divider()
+                .background(Color.white.opacity(0.12))
+                .padding(.vertical, 4)
+
+            Button {
+                social.isShowingTermsReviewSheet = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "doc.text.magnifyingglass")
+                        .foregroundStyle(LivriaSocialPalette.gold)
+                    Text("Conditions Générales d'Utilisation (Livria & Viple Live ID)")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                }
+                .padding(11)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+            }
+            .buttonStyle(.plain)
         }
         .padding(15)
         .socialCard(opacity: cardOpacity / 100.0)
