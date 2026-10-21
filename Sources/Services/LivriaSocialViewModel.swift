@@ -617,6 +617,19 @@ public final class LivriaSocialViewModel: ObservableObject {
         }
     }
 
+    public func uploadVideoData(_ data: Data, fileExtension: String = "mp4") async -> String? {
+        do {
+            return try await LivriaSocialAPIClient.shared.uploadMedia(
+                mediaKind: "video",
+                fileExtension: fileExtension,
+                data: data
+            )
+        } catch {
+            showToast(error.localizedDescription)
+            return nil
+        }
+    }
+
     // MARK: - 6. Recherche de Membres & Personnalisation Complète du Profil
 
     public func searchMembers(query: String) async {

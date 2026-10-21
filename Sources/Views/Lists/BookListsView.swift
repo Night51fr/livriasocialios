@@ -342,10 +342,21 @@ public struct CreateBookListSheetView: View {
     @State private var themeEmoji: String = "📚"
     @State private var curatorNote: String = "Incontournable de ma bibliothèque !"
     @State private var selectedBookIds: Set<Int> = []
+    @State private var bookSearchQuery: String = ""
 
     private let emojis = ["📚", "🔥", "💜", "🐉", "🕵️", "🚀", "🌙", "☕", "🏆", "💎"]
 
     public init() {}
+
+    private var filteredBooks: [SocialBookItem] {
+        let q = bookSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return social.booksCatalog }
+        return social.booksCatalog.filter {
+            $0.title.localizedCaseInsensitiveContains(q)
+                || $0.author.localizedCaseInsensitiveContains(q)
+                || $0.genre.localizedCaseInsensitiveContains(q)
+        }
+    }
 
     public var body: some View {
         NavigationStack {
@@ -380,7 +391,24 @@ public struct CreateBookListSheetView: View {
                 }
 
                 Section("Sélectionnez des livres Livria Store (\(selectedBookIds.count) choisis)") {
-                    ForEach(social.booksCatalog) { book in
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(LivriaSocialPalette.gold)
+                        TextField("Rechercher un livre ou un auteur...", text: $bookSearchQuery)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                        if !bookSearchQuery.isEmpty {
+                            Button {
+                                bookSearchQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    ForEach(filteredBooks) { book in
                         let isSelected = selectedBookIds.contains(book.id)
                         Button {
                             if isSelected {
@@ -390,21 +418,32 @@ public struct CreateBookListSheetView: View {
                             }
                         } label: {
                             HStack(spacing: 12) {
-                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                    .foregroundStyle(isSelected ? LivriaSocialPalette.emerald : .secondary)
-                                    .font(.system(size: 20))
+                                SocialBookCoverView(
+                                    coverUrl: book.coverUrl,
+                                    title: book.title,
+                                    width: 46,
+                                    height: 66,
+                                    cornerRadius: 8
+                                )
 
-                                VStack(alignment: .leading, spacing: 2) {
+                                VStack(alignment: .leading, spacing: 3) {
                                     Text(book.title)
                                         .font(.system(size: 14, weight: .bold))
                                         .foregroundStyle(.primary)
+                                        .lineLimit(2)
                                     Text("\(book.author) • \(String(format: "%.2f €", book.priceTtc))")
                                         .font(.system(size: 12))
                                         .foregroundStyle(.secondary)
                                 }
                                 Spacer()
+
+                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(isSelected ? LivriaSocialPalette.emerald : .secondary)
+                                    .font(.system(size: 22))
                             }
+                            .padding(.vertical, 2)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -447,17 +486,38 @@ private struct AddBookToListSheetView: View {
 
     var body: some View {
         NavigationStack {
-            Form {
-                Section("Liste : \(list.themeEmoji) \(list.title)") {
-                    Picker("Livre du catalogue Livria", selection: $selectedBookId) {
-                        Text("Choisir un livre...").tag(0)
-                        ForEach(social.booksCatalog) { book in
-                            Text("\(book.title) — \(String(format: "%.2f €", book.priceTtc))").tag(book.id)
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Liste : \(list.themeEmoji) \(list.title)")
+                            .font(.system(size: 16, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text("Recherchez un livre avec sa couverture pour l'ajouter à votre liste rémunérée.")
+                            .font(.system(size: 12.5))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
                     }
-                    TextField("Votre avis sur ce livre", text: $note)
+
+                    SocialBookPickerButtonCard(
+                        books: social.booksCatalog,
+                        selectedBookId: $selectedBookId,
+                        placeholderTitle: "Choisir un livre Livria",
+                        placeholderSubtitle: "Rechercher par titre ou auteur avec les couvertures"
+                    )
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Votre avis sur ce livre")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                        TextField("Pourquoi recommandez-vous ce livre ?", text: $note)
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
+                            .foregroundStyle(.white)
+                    }
+                    .socialCard(padding: 14)
                 }
+                .padding(16)
             }
+            .socialCustomBackground(bgType: "preset", bgValue: "aurora")
             .navigationTitle("Ajouter un livre")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -476,5 +536,6 @@ private struct AddBookToListSheetView: View {
                 }
             }
         }
+        .preferredColorScheme(.dark)
     }
 }

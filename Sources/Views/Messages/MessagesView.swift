@@ -372,15 +372,14 @@ public struct ConversationThreadView: View {
                 else if selectedAttachmentType == "voice" {
                     voiceRecorderAttachmentPanel
                 }
-                // 4. LIVRE DU CATALOGUE LIVRIA STORE
+                // 4. LIVRE DU CATALOGUE LIVRIA STORE (Menu de recherche avec couvertures)
                 else if selectedAttachmentType == "book" {
-                    Picker("Livre Livria Store", selection: $selectedBookId) {
-                        Text("Choisir un livre du catalogue...").tag(0)
-                        ForEach(social.booksCatalog) { book in
-                            Text("\(book.title) (\(String(format: "%.2f €", book.priceTtc)))").tag(book.id)
-                        }
-                    }
-                    .tint(LivriaSocialPalette.gold)
+                    SocialBookPickerButtonCard(
+                        books: social.booksCatalog,
+                        selectedBookId: $selectedBookId,
+                        placeholderTitle: "Choisir un livre Livria à envoyer",
+                        placeholderSubtitle: "Rechercher un livre avec aperçu des couvertures"
+                    )
                 }
                 // 5. LIEN WEB
                 else if selectedAttachmentType == "link" {

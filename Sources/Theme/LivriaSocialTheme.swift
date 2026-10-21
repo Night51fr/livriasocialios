@@ -149,7 +149,7 @@ extension Color {
     }
 }
 
-// MARK: - Logo Officiel « Livria Social » (Identique à l'icône de l'application)
+// MARK: - Logo Officiel « Livria Social » (Typographie épurée sans icône bibliothèque)
 
 public struct LivriaSocialBrandLogoView: View {
     public var compact: Bool = false
@@ -159,26 +159,13 @@ public struct LivriaSocialBrandLogoView: View {
     }
 
     public var body: some View {
-        HStack(spacing: compact ? 8 : 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: compact ? 10 : 12, style: .continuous)
-                    .fill(LivriaSocialPalette.socialHeroGradient)
-                    .frame(width: compact ? 32 : 38, height: compact ? 32 : 38)
-                    .shadow(color: LivriaSocialPalette.coral.opacity(0.45), radius: 6, x: 0, y: 3)
-
-                Image(systemName: "book.pages.fill")
-                    .font(.system(size: compact ? 15 : 18, weight: .bold))
-                    .foregroundStyle(.white)
-            }
-
-            VStack(alignment: .trailing, spacing: -3) {
-                Text("Livria")
-                    .font(.system(size: compact ? 20 : 23, weight: .black, design: .serif))
-                    .foregroundStyle(.white)
-                Text("Social")
-                    .font(.system(size: compact ? 10 : 11, weight: .heavy, design: .rounded))
-                    .foregroundStyle(LivriaSocialPalette.gold)
-            }
+        HStack(alignment: .firstTextBaseline, spacing: compact ? 5 : 6) {
+            Text("Livria")
+                .font(.system(size: compact ? 20 : 26, weight: .black, design: .serif))
+                .foregroundStyle(.white)
+            Text("Social")
+                .font(.system(size: compact ? 12 : 14, weight: .heavy, design: .rounded))
+                .foregroundStyle(LivriaSocialPalette.gold)
         }
     }
 }
@@ -530,5 +517,525 @@ extension View {
                 }
             }
         )
+    }
+}
+
+// MARK: - Menu de Recherche Visuel avec Couvertures pour Choisir un Livre Livria
+
+public struct SocialBookPickerSheetView: View {
+    @Environment(\.dismiss) private var dismiss
+
+    public let books: [SocialBookItem]
+    @Binding public var selectedBookId: Int
+    public var title: String
+
+    @State private var searchText: String = ""
+    @State private var selectedGenre: String = "Tous"
+    @State private var useGridMode: Bool = true
+
+    public init(
+        books: [SocialBookItem],
+        selectedBookId: Binding<Int>,
+        title: String = "Choisir un livre Livria"
+    ) {
+        self.books = books
+        self._selectedBookId = selectedBookId
+        self.title = title
+    }
+
+    private var availableGenres: [String] {
+        var seen = Set<String>()
+        var result: [String] = ["Tous"]
+        for book in books {
+            let g = book.genre.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !g.isEmpty && !seen.contains(g) {
+                seen.insert(g)
+                result.append(g)
+            }
+        }
+        return result
+    }
+
+    private var filteredBooks: [SocialBookItem] {
+        let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return books.filter { book in
+            let matchesGenre = (selectedGenre == "Tous") || (book.genre.caseInsensitiveCompare(selectedGenre) == .orderedSame)
+            guard matchesGenre else { return false }
+            if q.isEmpty { return true }
+            return book.title.localizedCaseInsensitiveContains(q)
+                || book.author.localizedCaseInsensitiveContains(q)
+                || book.genre.localizedCaseInsensitiveContains(q)
+                || book.isbn.localizedCaseInsensitiveContains(q)
+        }
+    }
+
+    private let gridColumns = [
+        GridItem(.flexible(), spacing: 14),
+        GridItem(.flexible(), spacing: 14)
+    ]
+
+    public var body: some View {
+        NavigationStack {
+            VStack(spacing: 12) {
+                // Barre de recherche + bascule Grille / Liste
+                HStack(spacing: 10) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(LivriaSocialPalette.gold)
+                        TextField("Rechercher un titre, un auteur, un genre...", text: $searchText)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .foregroundStyle(.white)
+                            .font(.system(size: 14))
+
+                        if !searchText.isEmpty {
+                            Button {
+                                searchText = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(LivriaSocialPalette.textMuted)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color.white.opacity(0.10))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(LivriaSocialPalette.border, lineWidth: 1)
+                            )
+                    )
+
+                    Button {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                            useGridMode.toggle()
+                        }
+                    } label: {
+                        Image(systemName: useGridMode ? "list.bullet" : "square.grid.2x2.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 42, height: 42)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(Color.white.opacity(0.10))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+
+                // Filtres rapides par genre
+                if availableGenres.count > 1 {
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 8) {
+                            ForEach(availableGenres, id: \.self) { genre in
+                                let active = selectedGenre == genre
+                                Button {
+                                    withAnimation {
+                                        selectedGenre = genre
+                                    }
+                                } label: {
+                                    Text(genre)
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .foregroundStyle(active ? .white : LivriaSocialPalette.textMuted)
+                                        .padding(.horizontal, 12)
+                                        .padding(.vertical, 7)
+                                        .background(
+                                            Capsule()
+                                                .fill(
+                                                    active
+                                                        ? AnyShapeStyle(LivriaSocialPalette.brandGradient)
+                                                        : AnyShapeStyle(Color.white.opacity(0.07))
+                                                )
+                                        )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                    }
+                }
+
+                // Résultats avec les couvertures des livres
+                ScrollView {
+                    if filteredBooks.isEmpty {
+                        VStack(spacing: 12) {
+                            Image(systemName: "magnifyingglass.circle.fill")
+                                .font(.system(size: 46))
+                                .foregroundStyle(LivriaSocialPalette.gold)
+                            Text("Aucun livre ne correspond à votre recherche")
+                                .font(.system(size: 16, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+                            Text("Essayez un autre titre, nom d'auteur ou réinitialisez les filtres.")
+                                .font(.system(size: 13))
+                                .foregroundStyle(LivriaSocialPalette.textMuted)
+                                .multilineTextAlignment(.center)
+                            if !searchText.isEmpty || selectedGenre != "Tous" {
+                                Button {
+                                    searchText = ""
+                                    selectedGenre = "Tous"
+                                } label: {
+                                    Text("Tout afficher")
+                                        .font(.system(size: 13, weight: .bold))
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 9)
+                                        .background(Capsule().fill(LivriaSocialPalette.primary))
+                                        .foregroundStyle(.white)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(32)
+                        .frame(maxWidth: .infinity)
+                    } else if useGridMode {
+                        LazyVGrid(columns: gridColumns, spacing: 14) {
+                            ForEach(filteredBooks) { book in
+                                bookGridCard(book)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 24)
+                    } else {
+                        LazyVStack(spacing: 10) {
+                            ForEach(filteredBooks) { book in
+                                bookListRow(book)
+                            }
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 24)
+                    }
+                }
+            }
+            .socialCustomBackground(bgType: "preset", bgValue: "aurora")
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Fermer") {
+                        dismiss()
+                    }
+                    .foregroundStyle(.white)
+                }
+                if selectedBookId > 0 {
+                    ToolbarItem(placement: .confirmationAction) {
+                        Button("Retirer") {
+                            selectedBookId = 0
+                            dismiss()
+                        }
+                        .foregroundStyle(LivriaSocialPalette.coral)
+                    }
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    private func bookGridCard(_ book: SocialBookItem) -> some View {
+        let isSelected = selectedBookId == book.id
+        return Button {
+            selectedBookId = book.id
+            dismiss()
+        } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                ZStack(alignment: .topTrailing) {
+                    HStack {
+                        Spacer()
+                        SocialBookCoverView(
+                            coverUrl: book.coverUrl,
+                            title: book.title,
+                            width: 112,
+                            height: 160,
+                            cornerRadius: 12
+                        )
+                        Spacer()
+                    }
+                    .padding(.top, 6)
+
+                    if isSelected {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(LivriaSocialPalette.mint)
+                            .background(Circle().fill(Color.black.opacity(0.7)))
+                            .padding(6)
+                    }
+                }
+
+                Text(book.title)
+                    .font(.system(size: 13.5, weight: .bold, design: .serif))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+
+                Text(book.author)
+                    .font(.system(size: 11.5, weight: .medium))
+                    .foregroundStyle(LivriaSocialPalette.textMuted)
+                    .lineLimit(1)
+
+                HStack {
+                    Text(String(format: "%.2f €", book.price))
+                        .font(.system(size: 13, weight: .black, design: .rounded))
+                        .foregroundStyle(LivriaSocialPalette.gold)
+
+                    Spacer()
+
+                    Text(isSelected ? "Choisi ✓" : "Choisir")
+                        .font(.system(size: 11, weight: .black, design: .rounded))
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule().fill(
+                                isSelected
+                                    ? AnyShapeStyle(LivriaSocialPalette.mint)
+                                    : AnyShapeStyle(LivriaSocialPalette.brandGradient)
+                            )
+                        )
+                        .foregroundStyle(isSelected ? .black : .white)
+                }
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(Color.white.opacity(isSelected ? 0.14 : 0.07))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .stroke(
+                                isSelected ? LivriaSocialPalette.mint : Color.white.opacity(0.16),
+                                lineWidth: isSelected ? 2 : 1
+                            )
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func bookListRow(_ book: SocialBookItem) -> some View {
+        let isSelected = selectedBookId == book.id
+        return Button {
+            selectedBookId = book.id
+            dismiss()
+        } label: {
+            HStack(spacing: 12) {
+                SocialBookCoverView(
+                    coverUrl: book.coverUrl,
+                    title: book.title,
+                    width: 62,
+                    height: 90,
+                    cornerRadius: 10
+                )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(book.title)
+                        .font(.system(size: 14.5, weight: .bold, design: .serif))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    Text("par \(book.author)")
+                        .font(.system(size: 12))
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                        .lineLimit(1)
+
+                    HStack(spacing: 8) {
+                        Text(String(format: "%.2f €", book.price))
+                            .font(.system(size: 13, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaSocialPalette.gold)
+
+                        if !book.genre.isEmpty {
+                            Text(book.genre)
+                                .font(.system(size: 10, weight: .bold))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 2)
+                                .background(Capsule().fill(Color.white.opacity(0.10)))
+                                .foregroundStyle(.white.opacity(0.85))
+                        }
+                    }
+                }
+
+                Spacer()
+
+                Text(isSelected ? "Choisi ✓" : "Choisir")
+                    .font(.system(size: 12, weight: .black, design: .rounded))
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule().fill(
+                            isSelected
+                                ? AnyShapeStyle(LivriaSocialPalette.mint)
+                                : AnyShapeStyle(LivriaSocialPalette.brandGradient)
+                        )
+                    )
+                    .foregroundStyle(isSelected ? .black : .white)
+            }
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color.white.opacity(isSelected ? 0.14 : 0.07))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16, style: .continuous)
+                            .stroke(
+                                isSelected ? LivriaSocialPalette.mint : Color.white.opacity(0.16),
+                                lineWidth: isSelected ? 2 : 1
+                            )
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Carte Bouton Réutilisable pour Ouvrir le Sélecteur de Livre avec Couverture
+
+public struct SocialBookPickerButtonCard: View {
+    public let books: [SocialBookItem]
+    @Binding public var selectedBookId: Int
+    public var placeholderTitle: String = "Choisir un livre Livria"
+    public var placeholderSubtitle: String = "Recherche par titre ou auteur avec aperçu des couvertures"
+
+    @State private var isShowingSheet: Bool = false
+
+    public init(
+        books: [SocialBookItem],
+        selectedBookId: Binding<Int>,
+        placeholderTitle: String = "Choisir un livre Livria",
+        placeholderSubtitle: String = "Recherche par titre ou auteur avec aperçu des couvertures"
+    ) {
+        self.books = books
+        self._selectedBookId = selectedBookId
+        self.placeholderTitle = placeholderTitle
+        self.placeholderSubtitle = placeholderSubtitle
+    }
+
+    private var selectedBook: SocialBookItem? {
+        books.first(where: { $0.id == selectedBookId })
+    }
+
+    public var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if let book = selectedBook {
+                HStack(spacing: 12) {
+                    SocialBookCoverView(
+                        coverUrl: book.coverUrl,
+                        title: book.title,
+                        width: 64,
+                        height: 94,
+                        cornerRadius: 10
+                    )
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("LIVRE SÉLECTIONNÉ")
+                            .font(.system(size: 10, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaSocialPalette.mint)
+
+                        Text(book.title)
+                            .font(.system(size: 14.5, weight: .bold, design: .serif))
+                            .foregroundStyle(.white)
+                            .lineLimit(2)
+
+                        Text("par \(book.author)")
+                            .font(.system(size: 12))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
+                            .lineLimit(1)
+
+                        Text(String(format: "%.2f € • %@", book.price, book.availabilityBadge))
+                            .font(.system(size: 12, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaSocialPalette.gold)
+                    }
+
+                    Spacer()
+
+                    VStack(spacing: 8) {
+                        Button {
+                            isShowingSheet = true
+                        } label: {
+                            Label("Changer", systemImage: "magnifyingglass")
+                                .font(.system(size: 11.5, weight: .bold))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 7)
+                                .background(Capsule().fill(LivriaSocialPalette.primary))
+                                .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(role: .destructive) {
+                            selectedBookId = 0
+                        } label: {
+                            Label("Retirer", systemImage: "xmark.circle.fill")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundStyle(LivriaSocialPalette.coral)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(LivriaSocialPalette.mint.opacity(0.6), lineWidth: 1.5)
+                        )
+                )
+            } else {
+                Button {
+                    isShowingSheet = true
+                } label: {
+                    HStack(spacing: 14) {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(LivriaSocialPalette.brandGradient)
+                                .frame(width: 52, height: 52)
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 20, weight: .black))
+                                .foregroundStyle(.white)
+                        }
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(placeholderTitle)
+                                .font(.system(size: 14.5, weight: .black, design: .rounded))
+                                .foregroundStyle(.white)
+                            Text(placeholderSubtitle)
+                                .font(.system(size: 12))
+                                .foregroundStyle(LivriaSocialPalette.textMuted)
+                                .lineLimit(2)
+                        }
+
+                        Spacer()
+
+                        HStack(spacing: 4) {
+                            Text("Parcourir")
+                                .font(.system(size: 12, weight: .black, design: .rounded))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .bold))
+                        }
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 8)
+                        .background(Capsule().fill(LivriaSocialPalette.goldGradient))
+                        .foregroundStyle(LivriaSocialPalette.ink)
+                    }
+                    .padding(13)
+                    .background(
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(Color.white.opacity(0.08))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                    .stroke(LivriaSocialPalette.border, lineWidth: 1)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .sheet(isPresented: $isShowingSheet) {
+            SocialBookPickerSheetView(
+                books: books,
+                selectedBookId: $selectedBookId,
+                title: placeholderTitle
+            )
+        }
     }
 }

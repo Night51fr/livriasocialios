@@ -1,4 +1,9 @@
 import SwiftUI
+import PhotosUI
+import AVKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Fil d'Actualité « Livria (social) » (Posts, Photos, Vidéos, Livres recommandés, Listes & Recherche Livres/Membres)
 
@@ -42,11 +47,9 @@ public struct FeedView: View {
                 bgType: social.currentUser?.pageBackgroundType ?? "preset",
                 bgValue: social.currentUser?.pageBackgroundValue ?? "aurora"
             )
+            .navigationTitle("Livria Social")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    LivriaSocialBrandLogoView(compact: true)
-                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button {
                         social.isShowingCreatePostSheet = true
@@ -476,13 +479,26 @@ public struct FeedView: View {
 
             // Média Photo / Vidéo éventuel
             if !post.mediaUrl.isEmpty, let mediaURL = URL(string: post.mediaUrl.hasPrefix("http") ? post.mediaUrl : "https://livriasocial.viplenetwork.com\(post.mediaUrl)") {
-                AsyncImage(url: mediaURL) { phase in
-                    if case .success(let image) = phase {
-                        image
-                            .resizable()
-                            .scaledToFill()
-                            .frame(maxHeight: 240)
-                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                let lowerUrl = post.mediaUrl.lowercased()
+                let isVideoPost = post.mediaType == "video"
+                    || post.postType == "video"
+                    || lowerUrl.hasSuffix(".mp4")
+                    || lowerUrl.hasSuffix(".mov")
+                    || lowerUrl.hasSuffix(".m4v")
+
+                if isVideoPost {
+                    VideoPlayer(player: AVPlayer(url: mediaURL))
+                        .frame(height: 240)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                } else {
+                    AsyncImage(url: mediaURL) { phase in
+                        if case .success(let image) = phase {
+                            image
+                                .resizable()
+                                .scaledToFill()
+                                .frame(maxHeight: 240)
+                                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
                     }
                 }
             }
@@ -698,17 +714,31 @@ public struct FeedView: View {
     }
 }
 
-// MARK: - Feuille de Création de Publication (Post, Photo, Vidéo, Livre de la Boutique)
+// MARK: - Assistant de Publication Étape par Étape (Galerie Photo/Vidéo iPhone & Recherche Visuelle de Livres avec Couvertures)
 
 public struct CreatePostSheetView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var social: LivriaSocialViewModel
 
-    @State private var postType: String = "book"
+    @State private var currentStep: Int = 1 // 1 = Format & Humeur, 2 = Média / Livre / Message, 3 = Aperçu & Publier
+    @State private var postType: String = "book" // book, post, photo, video
+    @State private var selectedMood: String = "✨ Coup de cœur"
+    @State private var selectedBookId: Int = 0
     @State private var content: String = ""
     @State private var mediaUrl: String = ""
-    @State private var selectedBookId: Int = 0
-    @State private var selectedMood: String = "✨ Coup de cœur"
+
+    // Importation Photo / Vidéo depuis la galerie de l'iPhone (PhotosUI)
+    @State private var selectedMediaPickerItem: PhotosPickerItem? = nil
+    @State private var localPhotoPreviewData: Data? = nil
+    @State private var isUploadingMedia: Bool = false
+    @State private var isPublishing: Bool = false
+
+    private let postFormats: [(id: String, title: String, subtitle: String, icon: String, accent: Color)] = [
+        ("book", "Recommander un Livre", "Présentez un ouvrage Livria avec sa couverture et son lien boutique", "book.closed.fill", LivriaSocialPalette.gold),
+        ("photo", "Photo de lecture", "Importez une photo directement depuis la galerie de votre iPhone", "photo.on.rectangle.angled", LivriaSocialPalette.coral),
+        ("video", "Vidéo / BookTok", "Importez une vidéo depuis la galerie de votre iPhone", "video.fill", LivriaSocialPalette.accent),
+        ("post", "Message & Débat", "Partagez un avis, une citation ou lancez une discussion", "text.bubble.fill", LivriaSocialPalette.primary)
+    ]
 
     private let moods = [
         "✨ Coup de cœur",
@@ -721,73 +751,693 @@ public struct CreatePostSheetView: View {
 
     public init() {}
 
+    private var selectedBook: SocialBookItem? {
+        social.booksCatalog.first(where: { $0.id == selectedBookId })
+    }
+
+    private var canProceedFromStep2: Bool {
+        if isUploadingMedia { return false }
+        let hasText = !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        if postType == "book" {
+            return selectedBookId > 0 || hasText
+        }
+        if postType == "photo" || postType == "video" {
+            return !mediaUrl.isEmpty || hasText
+        }
+        return hasText || selectedBookId > 0 || !mediaUrl.isEmpty
+    }
+
     public var body: some View {
         NavigationStack {
-            Form {
-                Section("Type de publication (+15 XP)") {
-                    Picker("Format", selection: $postType) {
-                        Text("📖 Recommander un Livre").tag("book")
-                        Text("💬 Post Texte").tag("post")
-                        Text("📸 Photo / Image").tag("photo")
-                        Text("🎬 Vidéo").tag("video")
-                    }
-                    .pickerStyle(.segmented)
+            VStack(spacing: 0) {
+                stepProgressHeader
+                    .padding(.horizontal, 16)
+                    .padding(.top, 10)
+                    .padding(.bottom, 12)
 
-                    Picker("Humeur / Badge", selection: $selectedMood) {
-                        ForEach(moods, id: \.self) { m in
-                            Text(m).tag(m)
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        if currentStep == 1 {
+                            step1FormatAndMoodView
+                        } else if currentStep == 2 {
+                            step2ContentMediaAndBookView
+                        } else {
+                            step3PreviewAndConfirmView
                         }
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 28)
                 }
 
-                if postType == "book" {
-                    Section("Livre de la boutique Livria à recommander") {
-                        Picker("Choisir un livre", selection: $selectedBookId) {
-                            Text("Sélectionner un ouvrage...").tag(0)
-                            ForEach(social.booksCatalog) { book in
-                                Text("\(book.title) — \(book.author) (\(String(format: "%.2f €", book.price)))")
-                                    .tag(book.id)
-                            }
-                        }
-                    }
-                }
-
-                if postType == "photo" || postType == "video" {
-                    Section(postType == "photo" ? "URL de la photo" : "URL de la vidéo") {
-                        TextField("https://...", text: $mediaUrl)
-                            .textInputAutocapitalization(.never)
-                    }
-                }
-
-                Section("Votre message pour la communauté") {
-                    TextEditor(text: $content)
-                        .frame(minHeight: 110)
-                }
+                bottomStepNavigationBar
             }
-            .navigationTitle("Nouvelle publication")
+            .socialCustomBackground(bgType: "preset", bgValue: "aurora")
+            .navigationTitle("Publier (+15 XP)")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("Annuler") { dismiss() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Publier") {
-                        Task {
-                            let ok = await social.createPost(
-                                postType: postType,
-                                content: content,
-                                mediaUrl: mediaUrl,
-                                mediaType: postType == "photo" ? "image" : (postType == "video" ? "video" : "none"),
-                                bookId: selectedBookId > 0 ? selectedBookId : nil,
-                                moodBadge: selectedMood
-                            )
-                            if ok { dismiss() }
-                        }
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Fermer") {
+                        dismiss()
                     }
-                    .fontWeight(.bold)
-                    .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && selectedBookId == 0)
+                    .foregroundStyle(.white)
                 }
             }
+            .onChange(of: selectedMediaPickerItem) { _, newItem in
+                guard let newItem else { return }
+                Task {
+                    await handlePickedGalleryMedia(item: newItem)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    // MARK: - Barre de Progression Étape 1 -> 2 -> 3
+
+    private var stepProgressHeader: some View {
+        let steps: [(num: Int, title: String, icon: String)] = [
+            (1, "Format", "sparkles"),
+            (2, "Contenu", "plus.rectangle.on.rectangle"),
+            (3, "Aperçu", "checkmark.seal.fill")
+        ]
+
+        return HStack(spacing: 8) {
+            ForEach(steps, id: \.num) { step in
+                let isCurrent = currentStep == step.num
+                let isDone = currentStep > step.num
+                Button {
+                    if step.num < currentStep || (step.num == 2 && currentStep == 1) || (step.num == 3 && canProceedFromStep2) {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            currentStep = step.num
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        ZStack {
+                            Circle()
+                                .fill(
+                                    isCurrent
+                                        ? AnyShapeStyle(LivriaSocialPalette.goldGradient)
+                                        : (isDone ? AnyShapeStyle(LivriaSocialPalette.mint) : AnyShapeStyle(Color.white.opacity(0.14)))
+                                )
+                                .frame(width: 24, height: 24)
+                            if isDone {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .black))
+                                    .foregroundStyle(.black)
+                            } else {
+                                Text("\(step.num)")
+                                    .font(.system(size: 12, weight: .black, design: .rounded))
+                                    .foregroundStyle(isCurrent ? LivriaSocialPalette.ink : .white)
+                            }
+                        }
+
+                        Text(step.title)
+                            .font(.system(size: 12.5, weight: .black, design: .rounded))
+                            .foregroundStyle(isCurrent ? .white : LivriaSocialPalette.textMuted)
+                            .lineLimit(1)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 9)
+                    .padding(.horizontal, 8)
+                    .background(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(isCurrent ? Color.white.opacity(0.14) : Color.white.opacity(0.05))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .stroke(isCurrent ? LivriaSocialPalette.gold.opacity(0.6) : Color.clear, lineWidth: 1.2)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - Étape 1 : Choisir le Type de Publication & l'Humeur
+
+    private var step1FormatAndMoodView: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Étape 1 • Que souhaitez-vous partager ?")
+                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                Text("Choisissez le format de votre publication pour guider la création.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(LivriaSocialPalette.textMuted)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(postFormats, id: \.id) { format in
+                    let isSelected = postType == format.id
+                    Button {
+                        withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                            if postType != format.id {
+                                postType = format.id
+                                selectedMediaPickerItem = nil
+                                localPhotoPreviewData = nil
+                                mediaUrl = ""
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 14) {
+                            ZStack {
+                                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                    .fill(format.accent.opacity(0.22))
+                                    .frame(width: 50, height: 50)
+                                Image(systemName: format.icon)
+                                    .font(.system(size: 21, weight: .bold))
+                                    .foregroundStyle(format.accent)
+                            }
+
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(format.title)
+                                    .font(.system(size: 15, weight: .black, design: .rounded))
+                                    .foregroundStyle(.white)
+                                Text(format.subtitle)
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(LivriaSocialPalette.textMuted)
+                                    .multilineTextAlignment(.leading)
+                            }
+
+                            Spacer()
+
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(isSelected ? LivriaSocialPalette.gold : Color.white.opacity(0.28))
+                        }
+                        .padding(14)
+                        .background(
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(Color.white.opacity(isSelected ? 0.13 : 0.06))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                        .stroke(
+                                            isSelected ? LivriaSocialPalette.gold : LivriaSocialPalette.border,
+                                            lineWidth: isSelected ? 2 : 1
+                                        )
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Quelle est votre humeur de lecture ?")
+                    .font(.system(size: 15, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                    ForEach(moods, id: \.self) { mood in
+                        let active = selectedMood == mood
+                        Button {
+                            selectedMood = mood
+                        } label: {
+                            Text(mood)
+                                .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 10)
+                                .padding(.horizontal, 8)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .fill(
+                                            active
+                                                ? AnyShapeStyle(LivriaSocialPalette.brandGradient)
+                                                : AnyShapeStyle(Color.white.opacity(0.07))
+                                        )
+                                )
+                                .foregroundStyle(.white)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                        .stroke(active ? Color.white.opacity(0.45) : Color.clear, lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .socialCard(padding: 14)
+        }
+    }
+
+    // MARK: - Étape 2 : Livre avec Couvertures, Photo/Vidéo Galerie iPhone & Message
+
+    private var step2ContentMediaAndBookView: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Étape 2 • Composez votre publication")
+                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                Text("Ajoutez votre média ou livre Livria, puis écrivez votre message.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(LivriaSocialPalette.textMuted)
+            }
+
+            // 1. Sélection Photo ou Vidéo depuis la galerie de l'iPhone
+            if postType == "photo" || postType == "video" {
+                galleryMediaUploadCard
+            }
+
+            // 2. Sélection d'un Livre Livria avec recherche et couvertures (principal pour "book", optionnel pour les autres)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label(
+                        postType == "book" ? "Livre Livria à recommander" : "Associer un livre Livria (optionnel)",
+                        systemImage: "book.closed.fill"
+                    )
+                    .font(.system(size: 14, weight: .black, design: .rounded))
+                    .foregroundStyle(LivriaSocialPalette.gold)
+                    Spacer()
+                }
+
+                SocialBookPickerButtonCard(
+                    books: social.booksCatalog,
+                    selectedBookId: $selectedBookId,
+                    placeholderTitle: "Choisir un livre Livria",
+                    placeholderSubtitle: "Ouvrir la recherche avec les couvertures des livres"
+                )
+            }
+            .socialCard(padding: 14)
+
+            // 3. Message écrit
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Label("Votre message pour la communauté", systemImage: "square.and.pencil")
+                        .font(.system(size: 14, weight: .black, design: .rounded))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Text("\(content.count) car.")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                }
+
+                TextField(
+                    "Partagez votre ressenti, une citation marquante ou pourquoi vous conseillez cette lecture...",
+                    text: $content,
+                    axis: .vertical
+                )
+                .lineLimit(5...10)
+                .font(.system(size: 14.5))
+                .foregroundStyle(.white)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(LivriaSocialPalette.border, lineWidth: 1)
+                        )
+                )
+
+                // Idées rapides pour inspirer l'utilisateur
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        quickPromptChip("Impossible de lâcher ce livre !")
+                        quickPromptChip("Une plume incroyable du début à la fin ✨")
+                        quickPromptChip("Qui d'autre l'a lu ? Vos avis ?")
+                    }
+                }
+            }
+            .socialCard(padding: 14)
+        }
+    }
+
+    private var galleryMediaUploadCard: some View {
+        let isVideo = (postType == "video")
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label(
+                    isVideo ? "Vidéo depuis votre iPhone" : "Photo depuis votre iPhone",
+                    systemImage: isVideo ? "video.badge.plus" : "photo.badge.plus"
+                )
+                .font(.system(size: 14, weight: .black, design: .rounded))
+                .foregroundStyle(LivriaSocialPalette.gold)
+
+                Spacer()
+
+                if isUploadingMedia {
+                    HStack(spacing: 6) {
+                        ProgressView().tint(LivriaSocialPalette.gold)
+                        Text("Importation...")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(LivriaSocialPalette.gold)
+                    }
+                } else if !mediaUrl.isEmpty {
+                    Label("Prêt ✓", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .black))
+                        .foregroundStyle(LivriaSocialPalette.mint)
+                }
+            }
+
+            PhotosPicker(
+                selection: $selectedMediaPickerItem,
+                matching: isVideo ? .videos : .images,
+                photoLibrary: .shared()
+            ) {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(LivriaSocialPalette.brandGradient)
+                            .frame(width: 46, height: 46)
+                        Image(systemName: isVideo ? "film.stack.fill" : "photo.on.rectangle.angled")
+                            .font(.system(size: 19, weight: .bold))
+                            .foregroundStyle(.white)
+                    }
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(mediaUrl.isEmpty
+                             ? (isVideo ? "Choisir une vidéo dans la galerie iPhone" : "Choisir une photo dans la galerie iPhone")
+                             : (isVideo ? "Changer la vidéo sélectionnée" : "Changer la photo sélectionnée"))
+                            .font(.system(size: 14, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+                        Text("Importation directe depuis la photothèque de votre iPhone")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(LivriaSocialPalette.gold)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(Color.white.opacity(0.08))
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(LivriaSocialPalette.border, lineWidth: 1)
+                        )
+                )
+            }
+            .buttonStyle(.plain)
+
+            // Aperçu du média importé
+            if !isVideo, let data = localPhotoPreviewData {
+                #if canImport(UIKit)
+                if let uiImage = UIImage(data: data) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 190)
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                        Button(role: .destructive) {
+                            selectedMediaPickerItem = nil
+                            localPhotoPreviewData = nil
+                            mediaUrl = ""
+                        } label: {
+                            Image(systemName: "trash.circle.fill")
+                                .font(.system(size: 26))
+                                .foregroundStyle(.white)
+                                .background(Circle().fill(Color.black.opacity(0.6)))
+                                .padding(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                #endif
+            } else if isVideo, !mediaUrl.isEmpty, let resolved = resolvedPreviewMediaURL {
+                ZStack(alignment: .topTrailing) {
+                    VideoPlayer(player: AVPlayer(url: resolved))
+                        .frame(height: 190)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+
+                    Button(role: .destructive) {
+                        selectedMediaPickerItem = nil
+                        mediaUrl = ""
+                    } label: {
+                        Image(systemName: "trash.circle.fill")
+                            .font(.system(size: 26))
+                            .foregroundStyle(.white)
+                            .background(Circle().fill(Color.black.opacity(0.6)))
+                            .padding(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .socialCard(padding: 14)
+    }
+
+    private func quickPromptChip(_ text: String) -> some View {
+        Button {
+            if content.isEmpty {
+                content = text
+            } else {
+                content += " \(text)"
+            }
+        } label: {
+            Text("+ \(text)")
+                .font(.system(size: 11.5, weight: .bold))
+                .foregroundStyle(.white.opacity(0.9))
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Étape 3 : Aperçu en Direct & Validation
+
+    private var step3PreviewAndConfirmView: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Étape 3 • Aperçu avant publication")
+                    .font(.system(size: 18, weight: .black, design: .rounded))
+                    .foregroundStyle(.white)
+                Text("Voici exactement comment votre publication apparaîtra dans le fil Livria Social.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(LivriaSocialPalette.textMuted)
+            }
+
+            // Carte d'aperçu fidèle au fil d'actualité
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    SocialAvatarRingView(
+                        avatarUrl: social.currentUser?.avatarUrl,
+                        displayName: social.currentUser?.displayName ?? "Vous",
+                        level: social.currentUser?.level ?? 1,
+                        accentHex: social.currentUser?.accentColor ?? "#7c4dff",
+                        size: 44
+                    )
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(social.currentUser?.displayName ?? "Vous")
+                            .font(.system(size: 14.5, weight: .bold))
+                            .foregroundStyle(.white)
+                        Text("À l'instant")
+                            .font(.system(size: 11))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
+                    }
+
+                    Spacer()
+
+                    Text(selectedMood)
+                        .font(.system(size: 11, weight: .bold, design: .rounded))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Capsule().fill(LivriaSocialPalette.primary.opacity(0.28)))
+                        .foregroundStyle(.white)
+                }
+
+                if !content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    Text(content)
+                        .font(.system(size: 14.5))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .lineSpacing(3)
+                }
+
+                if postType == "photo", let data = localPhotoPreviewData {
+                    #if canImport(UIKit)
+                    if let uiImage = UIImage(data: data) {
+                        Image(uiImage: uiImage)
+                            .resizable()
+                            .scaledToFill()
+                            .frame(maxHeight: 220)
+                            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    #endif
+                } else if postType == "video", let resolved = resolvedPreviewMediaURL {
+                    VideoPlayer(player: AVPlayer(url: resolved))
+                        .frame(height: 220)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+
+                if let book = selectedBook {
+                    HStack(spacing: 12) {
+                        SocialBookCoverView(coverUrl: book.coverUrl, title: book.title, width: 64, height: 94)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("📖 Livre recommandé sur Livria Store")
+                                .font(.system(size: 10.5, weight: .bold))
+                                .foregroundStyle(LivriaSocialPalette.gold)
+                            Text(book.title)
+                                .font(.system(size: 14.5, weight: .bold, design: .serif))
+                                .foregroundStyle(.white)
+                                .lineLimit(2)
+                            Text("par \(book.author)")
+                                .font(.system(size: 12))
+                                .foregroundStyle(LivriaSocialPalette.textMuted)
+                            Text(String(format: "%.2f € • %@", book.price, book.availabilityBadge))
+                                .font(.system(size: 13, weight: .black, design: .rounded))
+                                .foregroundStyle(LivriaSocialPalette.gold)
+                        }
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 16).fill(Color.white.opacity(0.07)))
+                }
+            }
+            .socialCard(padding: 16)
+
+            HStack(spacing: 10) {
+                Image(systemName: "bolt.circle.fill")
+                    .font(.title2)
+                    .foregroundStyle(LivriaSocialPalette.gold)
+                Text("Publier ce contenu vous rapporte immédiatement +15 XP sur votre profil Livria Social !")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.08)))
+        }
+    }
+
+    // MARK: - Barre de Navigation Inférieure (Précédent / Suivant / Publier)
+
+    private var bottomStepNavigationBar: some View {
+        HStack(spacing: 12) {
+            if currentStep > 1 {
+                Button {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        currentStep -= 1
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                        Text("Retour")
+                    }
+                    .font(.system(size: 14, weight: .bold, design: .rounded))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18)
+                    .padding(.vertical, 13)
+                    .background(Capsule().fill(Color.white.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+            }
+
+            if currentStep < 3 {
+                Button {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.8)) {
+                        currentStep += 1
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        Text(currentStep == 1 ? "Continuer vers le contenu" : "Voir l'aperçu")
+                        Image(systemName: "arrow.right")
+                    }
+                    .font(.system(size: 14.5, weight: .black, design: .rounded))
+                    .foregroundStyle(LivriaSocialPalette.ink)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(
+                        Capsule().fill(
+                            (currentStep == 1 || canProceedFromStep2)
+                                ? AnyShapeStyle(LivriaSocialPalette.goldGradient)
+                                : AnyShapeStyle(Color.white.opacity(0.18))
+                        )
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(currentStep == 2 && !canProceedFromStep2)
+            } else {
+                Button {
+                    Task {
+                        await publishPostNow()
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isPublishing {
+                            ProgressView().tint(LivriaSocialPalette.ink)
+                        } else {
+                            Image(systemName: "paperplane.fill")
+                            Text("Publier maintenant (+15 XP)")
+                        }
+                    }
+                    .font(.system(size: 15, weight: .black, design: .rounded))
+                    .foregroundStyle(LivriaSocialPalette.ink)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Capsule().fill(LivriaSocialPalette.goldGradient))
+                }
+                .buttonStyle(.plain)
+                .disabled(isPublishing || !canProceedFromStep2)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(LivriaSocialPalette.cardSurface.opacity(0.96))
+    }
+
+    private var resolvedPreviewMediaURL: URL? {
+        guard !mediaUrl.isEmpty else { return nil }
+        if mediaUrl.hasPrefix("http") {
+            return URL(string: mediaUrl)
+        }
+        return URL(string: "https://livriasocial.viplenetwork.com\(mediaUrl.hasPrefix("/") ? "" : "/")\(mediaUrl)")
+    }
+
+    private func handlePickedGalleryMedia(item: PhotosPickerItem) async {
+        isUploadingMedia = true
+        defer { isUploadingMedia = false }
+
+        do {
+            guard let rawData = try await item.loadTransferable(type: Data.self), !rawData.isEmpty else {
+                social.showToast("Impossible de lire le fichier sélectionné dans votre galerie.")
+                return
+            }
+
+            if postType == "video" {
+                if let uploadedUrl = await social.uploadVideoData(rawData, fileExtension: "mp4") {
+                    mediaUrl = uploadedUrl
+                }
+            } else {
+                var uploadData = rawData
+                #if canImport(UIKit)
+                if let img = UIImage(data: rawData), let jpeg = img.jpegData(compressionQuality: 0.84) {
+                    uploadData = jpeg
+                }
+                #endif
+                localPhotoPreviewData = uploadData
+                if let uploadedUrl = await social.uploadPhotoData(uploadData, fileExtension: "jpg") {
+                    mediaUrl = uploadedUrl
+                }
+            }
+        } catch {
+            social.showToast("Erreur lors de l'importation depuis la galerie : \(error.localizedDescription)")
+        }
+    }
+
+    private func publishPostNow() async {
+        guard !isPublishing else { return }
+        isPublishing = true
+        defer { isPublishing = false }
+
+        let ok = await social.createPost(
+            postType: postType,
+            content: content.trimmingCharacters(in: .whitespacesAndNewlines),
+            mediaUrl: mediaUrl,
+            mediaType: postType == "photo" ? "image" : (postType == "video" ? "video" : "none"),
+            bookId: selectedBookId > 0 ? selectedBookId : nil,
+            moodBadge: selectedMood
+        )
+        if ok {
+            dismiss()
         }
     }
 }
