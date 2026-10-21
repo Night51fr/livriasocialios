@@ -127,11 +127,14 @@ public struct SocialMandatoryAuthView: View {
     @State private var displayName: String = ""
     @State private var password: String = ""
 
-    // Finalisation d'inscription Sign in with Apple (Nom, Prénom, Pseudo, Adresse @viplemail.fr obligatoire)
+    // Finalisation d'inscription Sign in with Apple (Nom, Prénom, Pseudo, Adresse @viplemail.fr obligatoire OU association d'un compte Viple existant)
     @State private var appleFirstName: String = ""
     @State private var appleLastName: String = ""
     @State private var appleDisplayName: String = ""
     @State private var appleViplemailUser: String = ""
+    @State private var appleLinkExistingMode: Bool = false
+    @State private var appleExistingEmail: String = ""
+    @State private var appleExistingPassword: String = ""
 
     public init() {}
 
@@ -372,126 +375,295 @@ public struct SocialMandatoryAuthView: View {
                     .font(.title2)
                     .foregroundStyle(LivriaSocialPalette.gold)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Finalisez votre compte Viple Live ID")
+                    Text(appleLinkExistingMode ? "Associer mon compte Viple Live ID" : "Finalisez votre compte Viple Live ID")
                         .font(.system(size: 18, weight: .black, design: .rounded))
                         .foregroundStyle(.white)
-                    Text("Inscription Sign in with Apple • Adresse @viplemail.fr obligatoire")
+                    Text(appleLinkExistingMode
+                         ? "Liez votre compte Viple Live ID existant à votre compte Apple"
+                         : "Inscription Sign in with Apple • Adresse @viplemail.fr obligatoire")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(LivriaSocialPalette.gold)
                 }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "laptopcomputer.and.iphone")
-                        .foregroundStyle(LivriaSocialPalette.gold)
-                    Text("Pourquoi choisir une adresse @viplemail.fr ? Cet identifiant Viple Live ID vous permet de vous connecter depuis un autre appareil non Apple (ordinateur, web, Android), tandis que sur vos appareils Apple votre compte Viple Live ID reste associé à votre compte Apple.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.white)
-                }
-
-                Divider().background(Color.white.opacity(0.18))
-
-                HStack(alignment: .top, spacing: 8) {
-                    Image(systemName: "icloud.and.arrow.down.fill")
-                        .foregroundStyle(LivriaSocialPalette.coral)
-                    Text("Pour rendre votre expérience plus simple et plus rapide, aucun mot de passe ne vous est demandé maintenant. Le jour où vous voudrez vous connecter avec votre adresse @viplemail.fr depuis un autre appareil sans avoir encore de mot de passe, entrez simplement votre adresse @viplemail.fr sans mot de passe : un e-mail sera automatiquement envoyé sur votre boîte mail iCloud avec un lien pour créer votre mot de passe.")
-                        .font(.system(size: 12))
+                Spacer()
+                Button {
+                    withAnimation {
+                        social.pendingAppleOnboardingUserId = nil
+                        appleLinkExistingMode = false
+                        social.authErrorMessage = nil
+                    }
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.title3)
                         .foregroundStyle(LivriaSocialPalette.textMuted)
                 }
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
 
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("Prénom")
-                        .font(.system(size: 12, weight: .bold))
-                        .foregroundStyle(.white.opacity(0.85))
-                    TextField("Votre prénom", text: $appleFirstName)
-                        .padding(11)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.10)))
+            // Sélecteur : Nouveau profil @viplemail.fr OU "J'ai déjà un compte Viple Live ID"
+            HStack(spacing: 8) {
+                Button {
+                    withAnimation {
+                        appleLinkExistingMode = false
+                        social.authErrorMessage = nil
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "person.badge.plus")
+                        Text("Nouveau profil")
+                    }
+                    .font(.system(size: 12, weight: .black, design: .rounded))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule().fill(
+                            !appleLinkExistingMode
+                                ? AnyShapeStyle(LivriaSocialPalette.brandGradient)
+                                : AnyShapeStyle(Color.white.opacity(0.08))
+                        )
+                    )
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    withAnimation {
+                        appleLinkExistingMode = true
+                        social.authErrorMessage = nil
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "link.badge.plus")
+                        Text("J'ai déjà un compte Viple Live ID")
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .font(.system(size: 12, weight: .black, design: .rounded))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(
+                        Capsule().fill(
+                            appleLinkExistingMode
+                                ? AnyShapeStyle(LivriaSocialPalette.brandGradient)
+                                : AnyShapeStyle(Color.white.opacity(0.08))
+                        )
+                    )
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(5)
+            .background(Capsule().fill(Color.white.opacity(0.06)))
+
+            if appleLinkExistingMode {
+                HStack(alignment: .top, spacing: 9) {
+                    Image(systemName: "person.badge.key.fill")
+                        .foregroundStyle(LivriaSocialPalette.gold)
+                    Text("Vous possédez déjà un compte Viple Live ID ? Renseignez vos identifiants ci-dessous pour associer définitivement votre compte Viple Live ID à votre compte Apple. Vos prochaines connexions avec Apple ouvriront directement votre compte.")
+                        .font(.system(size: 12))
                         .foregroundStyle(.white)
                 }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
+
                 VStack(alignment: .leading, spacing: 5) {
-                    Text("Nom")
+                    Text("Identifiant ou e-mail Viple Live ID")
                         .font(.system(size: 12, weight: .bold))
                         .foregroundStyle(.white.opacity(0.85))
-                    TextField("Votre nom", text: $appleLastName)
-                        .padding(11)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.10)))
-                        .foregroundStyle(.white)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 5) {
-                Text("Pseudo")
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundStyle(.white.opacity(0.85))
-                TextField("Votre pseudo sur Livria Social", text: $appleDisplayName)
-                    .padding(11)
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.10)))
-                    .foregroundStyle(.white)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Quel nom d'adresse @viplemail.fr souhaitez-vous ? (obligatoire)")
-                    .font(.system(size: 12.5, weight: .bold))
-                    .foregroundStyle(.white)
-                HStack(spacing: 6) {
-                    TextField("prenom.nom", text: $appleViplemailUser)
+                    TextField("Ex: prenom.nom@viplemail.fr", text: $appleExistingEmail)
                         .textInputAutocapitalization(.never)
+                        .keyboardType(.emailAddress)
                         .autocorrectionDisabled()
                         .padding(11)
                         .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.10)))
                         .foregroundStyle(.white)
-                    Text("@viplemail.fr")
-                        .font(.system(size: 13.5, weight: .black, design: .monospaced))
-                        .foregroundStyle(LivriaSocialPalette.ink)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 11)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(LivriaSocialPalette.goldGradient))
                 }
-            }
 
-            if let err = social.authErrorMessage {
-                Text(err)
-                    .font(.system(size: 12.5, weight: .bold))
-                    .foregroundStyle(Color(hex: "#FCA5A5"))
-            }
-
-            Button {
-                Task {
-                    await social.completeAppleOnboarding(
-                        firstName: appleFirstName.trimmingCharacters(in: .whitespaces),
-                        lastName: appleLastName.trimmingCharacters(in: .whitespaces),
-                        displayName: appleDisplayName.trimmingCharacters(in: .whitespaces),
-                        viplemailUser: appleViplemailUser.trimmingCharacters(in: .whitespaces)
-                    )
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Mot de passe Viple Live ID")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.85))
+                    SecureField("Votre mot de passe Viple Live ID", text: $appleExistingPassword)
+                        .padding(11)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.10)))
+                        .foregroundStyle(.white)
                 }
-            } label: {
-                HStack {
-                    Spacer()
-                    if social.isLoading {
-                        ProgressView().tint(LivriaSocialPalette.ink)
-                    } else {
-                        Image(systemName: "checkmark.seal.fill")
-                        Text("Valider mon identifiant @viplemail.fr")
-                            .font(.system(size: 15, weight: .black, design: .rounded))
+
+                if let err = social.authErrorMessage {
+                    Text(err)
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(Color(hex: "#FCA5A5"))
+                }
+
+                Button {
+                    Task {
+                        await social.linkAppleToExistingAccount(
+                            email: appleExistingEmail.trimmingCharacters(in: .whitespacesAndNewlines),
+                            password: appleExistingPassword
+                        )
                     }
-                    Spacer()
+                } label: {
+                    HStack {
+                        Spacer()
+                        if social.isLoading {
+                            ProgressView().tint(LivriaSocialPalette.ink)
+                        } else {
+                            Image(systemName: "link.circle.fill")
+                            Text("Associer mon compte Viple Live ID à Apple")
+                                .font(.system(size: 14.5, weight: .black, design: .rounded))
+                        }
+                        Spacer()
+                    }
+                    .foregroundStyle(LivriaSocialPalette.ink)
+                    .padding(.vertical, 14)
+                    .background(Capsule().fill(LivriaSocialPalette.goldGradient))
                 }
-                .foregroundStyle(LivriaSocialPalette.ink)
-                .padding(.vertical, 14)
-                .background(Capsule().fill(LivriaSocialPalette.goldGradient))
+                .disabled(
+                    appleExistingEmail.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+                    appleExistingPassword.isEmpty ||
+                    social.isLoading
+                )
+
+                Button {
+                    withAnimation {
+                        appleLinkExistingMode = false
+                        social.authErrorMessage = nil
+                    }
+                } label: {
+                    Text("Je n'ai pas encore de compte, créer mon identifiant @viplemail.fr")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(LivriaSocialPalette.gold)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 2)
+                }
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "laptopcomputer.and.iphone")
+                            .foregroundStyle(LivriaSocialPalette.gold)
+                        Text("Pourquoi choisir une adresse @viplemail.fr ? Cet identifiant Viple Live ID vous permet de vous connecter depuis un autre appareil non Apple (ordinateur, web, Android), tandis que sur vos appareils Apple votre compte Viple Live ID reste associé à votre compte Apple.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white)
+                    }
+
+                    Divider().background(Color.white.opacity(0.18))
+
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "icloud.and.arrow.down.fill")
+                            .foregroundStyle(LivriaSocialPalette.coral)
+                        Text("Pour rendre votre expérience plus simple et plus rapide, aucun mot de passe ne vous est demandé maintenant. Le jour où vous voudrez vous connecter avec votre adresse @viplemail.fr depuis un autre appareil sans avoir encore de mot de passe, entrez simplement votre adresse @viplemail.fr sans mot de passe : un e-mail sera automatiquement envoyé sur votre boîte mail iCloud avec un lien pour créer votre mot de passe.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
+                    }
+                }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
+
+                HStack(spacing: 10) {
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Prénom")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.85))
+                        TextField("Votre prénom", text: $appleFirstName)
+                            .padding(11)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.10)))
+                            .foregroundStyle(.white)
+                    }
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("Nom")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundStyle(.white.opacity(0.85))
+                        TextField("Votre nom", text: $appleLastName)
+                            .padding(11)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.10)))
+                            .foregroundStyle(.white)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("Pseudo")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.white.opacity(0.85))
+                    TextField("Votre pseudo sur Livria Social", text: $appleDisplayName)
+                        .padding(11)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.10)))
+                        .foregroundStyle(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Quel nom d'adresse @viplemail.fr souhaitez-vous ? (obligatoire)")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(.white)
+                    HStack(spacing: 6) {
+                        TextField("prenom.nom", text: $appleViplemailUser)
+                            .textInputAutocapitalization(.never)
+                            .autocorrectionDisabled()
+                            .padding(11)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.10)))
+                            .foregroundStyle(.white)
+                        Text("@viplemail.fr")
+                            .font(.system(size: 13.5, weight: .black, design: .monospaced))
+                            .foregroundStyle(LivriaSocialPalette.ink)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 11)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(LivriaSocialPalette.goldGradient))
+                    }
+                }
+
+                if let err = social.authErrorMessage {
+                    Text(err)
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(Color(hex: "#FCA5A5"))
+                }
+
+                Button {
+                    Task {
+                        await social.completeAppleOnboarding(
+                            firstName: appleFirstName.trimmingCharacters(in: .whitespaces),
+                            lastName: appleLastName.trimmingCharacters(in: .whitespaces),
+                            displayName: appleDisplayName.trimmingCharacters(in: .whitespaces),
+                            viplemailUser: appleViplemailUser.trimmingCharacters(in: .whitespaces)
+                        )
+                    }
+                } label: {
+                    HStack {
+                        Spacer()
+                        if social.isLoading {
+                            ProgressView().tint(LivriaSocialPalette.ink)
+                        } else {
+                            Image(systemName: "checkmark.seal.fill")
+                            Text("Valider mon identifiant @viplemail.fr")
+                                .font(.system(size: 15, weight: .black, design: .rounded))
+                        }
+                        Spacer()
+                    }
+                    .foregroundStyle(LivriaSocialPalette.ink)
+                    .padding(.vertical, 14)
+                    .background(Capsule().fill(LivriaSocialPalette.goldGradient))
+                }
+                .disabled(
+                    appleFirstName.trimmingCharacters(in: .whitespaces).isEmpty ||
+                    appleLastName.trimmingCharacters(in: .whitespaces).isEmpty ||
+                    appleDisplayName.trimmingCharacters(in: .whitespaces).isEmpty ||
+                    appleViplemailUser.trimmingCharacters(in: .whitespaces).isEmpty ||
+                    social.isLoading
+                )
+
+                Button {
+                    withAnimation {
+                        appleLinkExistingMode = true
+                        social.authErrorMessage = nil
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "person.badge.key.fill")
+                        Text("J'ai déjà un compte Viple Live ID")
+                    }
+                    .font(.system(size: 13, weight: .black, design: .rounded))
+                    .foregroundStyle(LivriaSocialPalette.gold)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
+                }
             }
-            .disabled(
-                appleFirstName.trimmingCharacters(in: .whitespaces).isEmpty ||
-                appleLastName.trimmingCharacters(in: .whitespaces).isEmpty ||
-                appleDisplayName.trimmingCharacters(in: .whitespaces).isEmpty ||
-                appleViplemailUser.trimmingCharacters(in: .whitespaces).isEmpty ||
-                social.isLoading
-            )
         }
         .padding(18)
         .socialCard()

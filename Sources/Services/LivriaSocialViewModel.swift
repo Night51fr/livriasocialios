@@ -14,7 +14,8 @@ public final class LivriaSocialViewModel: ObservableObject {
     @Published public var isLoading: Bool = false
     @Published public var authErrorMessage: String? = nil
     @Published public var applePasswordSetupNotice: String? = nil
-    @Published public var pendingAppleOnboardingUserId: Int? = nil
+    @Published public var pendingAppleOnboardingUserId: String? = nil
+    @Published public var pendingAppleOnboardingEmail: String? = nil
     @Published public var pendingAppleFirstName: String = ""
     @Published public var pendingAppleLastName: String = ""
 
@@ -243,10 +244,11 @@ public final class LivriaSocialViewModel: ObservableObject {
                 "lastName": lastName ?? "",
                 "identityToken": identityToken ?? ""
             ])
-            if res.requiresAppleOnboarding == true {
-                self.pendingAppleOnboardingUserId = res.appleOnboardingUserId
-                self.pendingAppleFirstName = res.appleFirstName ?? firstName ?? ""
-                self.pendingAppleLastName = res.appleLastName ?? lastName ?? ""
+            if res.needsOnboarding == true || res.requiresAppleOnboarding == true {
+                self.pendingAppleOnboardingUserId = res.appleUserId ?? appleUserId
+                self.pendingAppleOnboardingEmail = res.appleEmail ?? email
+                self.pendingAppleFirstName = res.suggestedFirstName ?? res.appleFirstName ?? firstName ?? ""
+                self.pendingAppleLastName = res.suggestedLastName ?? res.appleLastName ?? lastName ?? ""
                 return
             }
             guard res.ok, let user = res.user else {
@@ -254,6 +256,7 @@ public final class LivriaSocialViewModel: ObservableObject {
                 return
             }
             self.pendingAppleOnboardingUserId = nil
+            self.pendingAppleOnboardingEmail = nil
             self.currentUser = user
             self.isAuthenticated = true
             defaults.set(user.email, forKey: savedEmailKey)
@@ -274,16 +277,18 @@ public final class LivriaSocialViewModel: ObservableObject {
         displayName: String,
         viplemailUser: String
     ) async {
-        guard let vipleUserId = pendingAppleOnboardingUserId else { return }
+        guard let appleUserId = pendingAppleOnboardingUserId, !appleUserId.isEmpty else { return }
         isLoading = true
         authErrorMessage = nil
         defer { isLoading = false }
         do {
             let res: SocialAuthResponse = try await LivriaSocialAPIClient.shared.postJSON("/auth/apple-complete", body: [
-                "vipleUserId": vipleUserId,
+                "appleUserId": appleUserId,
+                "appleEmail": pendingAppleOnboardingEmail ?? "",
                 "firstName": firstName,
                 "lastName": lastName,
                 "displayName": displayName,
+                "vipleMailUser": viplemailUser,
                 "viplemailUser": viplemailUser
             ])
             guard res.ok, let user = res.user else {
@@ -291,6 +296,7 @@ public final class LivriaSocialViewModel: ObservableObject {
                 return
             }
             self.pendingAppleOnboardingUserId = nil
+            self.pendingAppleOnboardingEmail = nil
             self.currentUser = user
             self.isAuthenticated = true
             defaults.set(user.email, forKey: savedEmailKey)
@@ -299,6 +305,41 @@ public final class LivriaSocialViewModel: ObservableObject {
             syncLocalDailyLocks(userId: user.id)
             isShowingAuthSheet = false
             showToast("Compte Viple Live ID créé (\(user.email)) !")
+            await refreshBootstrap(email: user.email, userId: user.id)
+        } catch {
+            authErrorMessage = error.localizedDescription
+        }
+    }
+
+    public func linkAppleToExistingAccount(
+        email: String,
+        password: String
+    ) async {
+        guard let appleUserId = pendingAppleOnboardingUserId, !appleUserId.isEmpty else { return }
+        isLoading = true
+        authErrorMessage = nil
+        defer { isLoading = false }
+        do {
+            let res: SocialAuthResponse = try await LivriaSocialAPIClient.shared.postJSON("/auth/apple-link-existing", body: [
+                "appleUserId": appleUserId,
+                "appleEmail": pendingAppleOnboardingEmail ?? "",
+                "email": email,
+                "password": password
+            ])
+            guard res.ok, let user = res.user else {
+                authErrorMessage = res.error ?? "Identifiant Viple Live ID ou mot de passe incorrect."
+                return
+            }
+            self.pendingAppleOnboardingUserId = nil
+            self.pendingAppleOnboardingEmail = nil
+            self.currentUser = user
+            self.isAuthenticated = true
+            defaults.set(user.email, forKey: savedEmailKey)
+            defaults.set(user.id, forKey: savedUserIdKey)
+            defaults.set(res.token ?? "ls-token-\(user.id)", forKey: savedTokenKey)
+            syncLocalDailyLocks(userId: user.id)
+            isShowingAuthSheet = false
+            showToast("Votre compte Viple Live ID (\(user.displayName)) est désormais associé à votre compte Apple !")
             await refreshBootstrap(email: user.email, userId: user.id)
         } catch {
             authErrorMessage = error.localizedDescription

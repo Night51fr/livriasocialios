@@ -35,9 +35,14 @@ public struct SocialAuthResponse: Codable, Sendable {
     public var message: String?
     public var token: String?
     public var user: SocialUserProfile?
+    public var needsOnboarding: Bool?
     public var requiresApplePasswordSetup: Bool?
     public var requiresAppleOnboarding: Bool?
     public var isNewSignup: Bool?
+    public var appleUserId: String?
+    public var appleEmail: String?
+    public var suggestedFirstName: String?
+    public var suggestedLastName: String?
     public var appleOnboardingUserId: Int?
     public var appleICloudEmail: String?
     public var appleFirstName: String?
