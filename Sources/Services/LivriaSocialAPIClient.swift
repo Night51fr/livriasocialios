@@ -118,4 +118,69 @@ public final class LivriaSocialAPIClient {
         let res: SocialMemberSearchResponse = try await getJSON("/members/search", queryItems: items)
         return res.members
     }
+
+    public func uploadMedia(mediaKind: String, fileExtension: String, data: Data) async throws -> String {
+        let res: SocialMediaUploadResponse = try await postJSON("/media/upload", body: [
+            "mediaKind": mediaKind,
+            "extension": fileExtension,
+            "base64Data": data.base64EncodedString()
+        ])
+        guard res.ok, let url = res.url, !url.isEmpty else {
+            throw NSError(
+                domain: "LivriaSocialAPI",
+                code: 400,
+                userInfo: [NSLocalizedDescriptionKey: res.error ?? "Impossible de téléverser le fichier média."]
+            )
+        }
+        return url
+    }
+
+    public func searchGifs(query: String) async throws -> [SocialGifItem] {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        do {
+            let res: SocialGifSearchResponse = try await getJSON(
+                "/gifs/search",
+                queryItems: trimmed.isEmpty ? [] : [URLQueryItem(name: "q", value: trimmed)]
+            )
+            if !res.gifs.isEmpty {
+                return res.gifs
+            }
+        } catch {
+            // Fallback direct vers l'API Giphy si nécessaire
+        }
+
+        let apiKey = "GlVGYHkr3WSBnllca54iNt0yFbjz7L65"
+        let giphyEndpoint: String
+        if trimmed.isEmpty {
+            giphyEndpoint = "https://api.giphy.com/v1/gifs/trending?api_key=\(apiKey)&limit=24&rating=g"
+        } else {
+            let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? trimmed
+            giphyEndpoint = "https://api.giphy.com/v1/gifs/search?api_key=\(apiKey)&q=\(encoded)&limit=24&rating=g&lang=fr"
+        }
+
+        guard let url = URL(string: giphyEndpoint) else { return [] }
+        var req = URLRequest(url: url)
+        req.setValue("Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)", forHTTPHeaderField: "User-Agent")
+        let (data, _) = try await session.data(for: req)
+        guard let root = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let arr = root["data"] as? [[String: Any]] else {
+            return []
+        }
+
+        var items: [SocialGifItem] = []
+        for item in arr {
+            let id = (item["id"] as? String) ?? UUID().uuidString
+            let title = (item["title"] as? String) ?? "GIF"
+            let images = item["images"] as? [String: Any]
+            let fh = images?["fixed_height"] as? [String: Any]
+            let fhs = images?["fixed_height_small"] as? [String: Any]
+            let orig = images?["original"] as? [String: Any]
+            let gifUrl = (fh?["url"] as? String) ?? (orig?["url"] as? String) ?? ""
+            let previewUrl = (fhs?["url"] as? String) ?? gifUrl
+            if !gifUrl.isEmpty {
+                items.append(SocialGifItem(id: id, title: title, gifUrl: gifUrl, previewUrl: previewUrl))
+            }
+        }
+        return items
+    }
 }

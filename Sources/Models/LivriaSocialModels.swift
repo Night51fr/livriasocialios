@@ -282,6 +282,32 @@ public struct SocialMemberSearchResponse: Codable, Sendable {
     public var members: [SocialMemberSummary]
 }
 
+public struct SocialGifItem: Codable, Identifiable, Equatable, Hashable, Sendable {
+    public var id: String
+    public var title: String
+    public var gifUrl: String
+    public var previewUrl: String
+
+    public init(id: String, title: String, gifUrl: String, previewUrl: String) {
+        self.id = id
+        self.title = title
+        self.gifUrl = gifUrl
+        self.previewUrl = previewUrl
+    }
+}
+
+public struct SocialGifSearchResponse: Codable, Sendable {
+    public var ok: Bool
+    public var gifs: [SocialGifItem]
+}
+
+public struct SocialMediaUploadResponse: Codable, Sendable {
+    public var ok: Bool
+    public var url: String?
+    public var relativeUrl: String?
+    public var error: String?
+}
+
 public struct SocialBackgroundPreset: Codable, Identifiable, Equatable, Sendable {
     public var id: String
     public var name: String

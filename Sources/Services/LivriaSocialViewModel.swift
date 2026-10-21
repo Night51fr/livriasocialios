@@ -583,6 +583,40 @@ public final class LivriaSocialViewModel: ObservableObject {
         }
     }
 
+    public func searchGifs(query: String) async -> [SocialGifItem] {
+        do {
+            return try await LivriaSocialAPIClient.shared.searchGifs(query: query)
+        } catch {
+            return []
+        }
+    }
+
+    public func uploadPhotoData(_ data: Data, fileExtension: String = "jpg") async -> String? {
+        do {
+            return try await LivriaSocialAPIClient.shared.uploadMedia(
+                mediaKind: "image",
+                fileExtension: fileExtension,
+                data: data
+            )
+        } catch {
+            showToast(error.localizedDescription)
+            return nil
+        }
+    }
+
+    public func uploadVoiceData(_ data: Data, fileExtension: String = "m4a") async -> String? {
+        do {
+            return try await LivriaSocialAPIClient.shared.uploadMedia(
+                mediaKind: "voice",
+                fileExtension: fileExtension,
+                data: data
+            )
+        } catch {
+            showToast(error.localizedDescription)
+            return nil
+        }
+    }
+
     // MARK: - 6. Recherche de Membres & Personnalisation Complète du Profil
 
     public func searchMembers(query: String) async {

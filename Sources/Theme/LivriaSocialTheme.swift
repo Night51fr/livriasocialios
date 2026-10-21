@@ -34,6 +34,10 @@ public enum LivriaSocialPalette: Sendable {
         )
     }
 
+    public static var heroGradient: LinearGradient {
+        socialHeroGradient
+    }
+
     public static var brandGradient: LinearGradient {
         LinearGradient(
             colors: [primary, coral],
