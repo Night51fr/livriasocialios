@@ -240,12 +240,8 @@ public struct MarketplaceProfileView: View {
 
             PhotosPicker(selection: $selectedAvatarItem, matching: .images) {
                 HStack(spacing: 8) {
-                    if isUploadingAvatar {
-                        ProgressView().tint(.white)
-                    } else {
-                        Image(systemName: "camera.crop.circle.fill")
-                    }
-                    Text(isUploadingAvatar ? "Envoi de la photo recadrée..." : "Uploader & Recadrer ma photo de profil")
+                    Image(systemName: "camera.crop.circle.fill")
+                    Text("Uploader & Recadrer ma photo de profil")
                         .font(.system(size: 13.5, weight: .bold, design: .rounded))
                     Spacer()
                     Image(systemName: "crop")
