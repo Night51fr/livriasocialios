@@ -63,6 +63,10 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
     @Published public var activeShareListing: MarketplaceListing? = nil
     @Published public var editingListing: MarketplaceListing? = nil
 
+    // Ouverture directe d'une annonce depuis Livria Social (livriamarketplace://listing/{id})
+    @Published public var deepLinkedListing: MarketplaceListing? = nil
+    private var pendingDeepLinkedListingId: String? = nil
+
     // Enregistrement Vocal Réel (.m4a) & Lecture Audio dans la Messagerie
     @Published public var isRecordingVoiceNote: Bool = false
     @Published public var recordingSeconds: Int = 0
@@ -110,6 +114,12 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
                 self.selectedRelayPoint = resp.relayPoints.first
             }
             self.takerApplication = resp.takerApplication
+
+            if let pendingId = self.pendingDeepLinkedListingId,
+               let matched = self.listings.first(where: { $0.id == pendingId }) {
+                self.deepLinkedListing = matched
+                self.pendingDeepLinkedListingId = nil
+            }
 
             if let user = resp.currentUser, user.numericUserId > 0 {
                 self.currentUser = user
@@ -255,6 +265,48 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
 
     public func handleIncomingDeepLink(_ url: URL) {
         let host = (url.host ?? "").lowercased()
+        let pathParts = url.pathComponents.filter { $0 != "/" }
+        let queryItems = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+
+        // Si Livria Social ou Livria Store transmet la session Viple Live ID dans l'URL
+        if !isAuthenticated,
+           let ssoEmail = queryItems.first(where: { $0.name == "ssoEmail" })?.value,
+           !ssoEmail.isEmpty,
+           !ssoEmail.lowercased().hasSuffix("@guest.livria.store") {
+            Task {
+                await checkCrossAppSingleSignOn()
+            }
+        }
+
+        // Lien direct vers une annonce : livriamarketplace://listing/{id}
+        if host == "listing" || host == "annonce" || host == "item" {
+            let listingId = pathParts.first ?? queryItems.first(where: { $0.name == "id" })?.value ?? ""
+            selectedTab = .explore
+            if !listingId.isEmpty {
+                if let matched = listings.first(where: { $0.id == listingId }) {
+                    deepLinkedListing = matched
+                } else {
+                    pendingDeepLinkedListingId = listingId
+                    Task { await bootstrap() }
+                }
+            }
+            return
+        }
+
+        if let firstPart = pathParts.first?.lowercased(),
+           (firstPart == "listing" || firstPart == "marketplace"),
+           pathParts.count > 1 {
+            let listingId = pathParts[1]
+            selectedTab = .explore
+            if let matched = listings.first(where: { $0.id == listingId }) {
+                deepLinkedListing = matched
+            } else {
+                pendingDeepLinkedListingId = listingId
+                Task { await bootstrap() }
+            }
+            return
+        }
+
         switch host {
         case "sell", "vendre":
             selectedTab = .sell
@@ -270,6 +322,40 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         default:
             selectedTab = .explore
         }
+    }
+
+    // MARK: - Contrôle d'Accès Réservé aux Utilisateurs Connectés Viple Live ID
+
+    @discardableResult
+    public func requireVipleLiveID(for actionLabel: String) -> Bool {
+        guard isAuthenticated, let u = currentUser, u.numericUserId > 0 else {
+            showToast("Connectez-vous avec Viple Live ID pour \(actionLabel).")
+            isShowingAuthSheet = true
+            return false
+        }
+        return true
+    }
+
+    public func startCheckout(for listing: MarketplaceListing, agreedPrice: Double? = nil) {
+        guard requireVipleLiveID(for: "acheter un article sur Livria Marketplace") else { return }
+        activeCheckoutAgreedPrice = agreedPrice
+        activeCheckoutListing = listing
+    }
+
+    public func startMakeOffer(for listing: MarketplaceListing) {
+        guard requireVipleLiveID(for: "faire une offre au vendeur") else { return }
+        activeOfferListing = listing
+    }
+
+    public func startShareListing(_ listing: MarketplaceListing) {
+        guard requireVipleLiveID(for: "partager une annonce en message") else { return }
+        activeShareListing = listing
+    }
+
+    public func openSellTab(editing: MarketplaceListing? = nil) {
+        guard requireVipleLiveID(for: "publier ou gérer une annonce") else { return }
+        editingListing = editing
+        selectedTab = .sell
     }
 
     // MARK: - Authentification Viple Live ID Réelle & Cross-App SSO

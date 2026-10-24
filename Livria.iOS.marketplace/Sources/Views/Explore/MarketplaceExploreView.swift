@@ -39,6 +39,18 @@ public struct MarketplaceExploreView: View {
                 MarketplaceListingDetailView(listing: listing)
                     .environmentObject(store)
             }
+            .onAppear {
+                if let target = store.deepLinkedListing {
+                    selectedListingForDetail = target
+                    store.deepLinkedListing = nil
+                }
+            }
+            .onChange(of: store.deepLinkedListing) { _, target in
+                if let target {
+                    selectedListingForDetail = target
+                    store.deepLinkedListing = nil
+                }
+            }
         }
     }
 
@@ -93,8 +105,7 @@ public struct MarketplaceExploreView: View {
 
             HStack(spacing: 10) {
                 Button {
-                    store.editingListing = nil
-                    store.selectedTab = .sell
+                    store.openSellTab()
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "plus.circle.fill")
@@ -152,6 +163,7 @@ public struct MarketplaceExploreView: View {
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(MarketplacePalette.border, lineWidth: 1))
 
                 Button {
+                    guard store.requireVipleLiveID(for: "consulter vos annonces favorites") else { return }
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         store.showOnlyFavorites.toggle()
                     }
@@ -323,8 +335,7 @@ public struct MarketplaceExploreView: View {
                     Spacer()
 
                     Button {
-                        store.editingListing = nil
-                        store.selectedTab = .sell
+                        store.openSellTab()
                     } label: {
                         Text("Vendre")
                             .font(.system(size: 12, weight: .bold, design: .rounded))
@@ -439,7 +450,7 @@ public struct MarketplaceExploreView: View {
                 .foregroundStyle(MarketplacePalette.inkMuted)
                 .multilineTextAlignment(.center)
             Button {
-                store.selectedTab = .sell
+                store.openSellTab()
             } label: {
                 Text("Créer une annonce maintenant")
                     .font(.system(size: 13.5, weight: .bold, design: .rounded))
@@ -457,6 +468,7 @@ public struct MarketplaceExploreView: View {
 
     private var vipleTakerPromoBanner: some View {
         Button {
+            guard store.requireVipleLiveID(for: "devenir Viple Taker") else { return }
             store.isShowingTakerApplicationSheet = true
         } label: {
             HStack(spacing: 14) {
@@ -626,13 +638,12 @@ public struct MarketplaceListingCard: View {
 
             Divider()
 
-            // 3. Les 4 Boutons sous forme de petites icônes demandés :
+            // 3. Les 4 Boutons sous forme de petites icônes demandés (Réservés Viple Live ID) :
             // [🛒 Caddie : Acheter] [🏷️ Faire une offre] [❤️ Favoris] [📤 Partager]
             HStack(spacing: 6) {
-                // Icône 1 : Caddie pour Acheter
+                // Icône 1 : Caddie pour Acheter (Viple Live ID requis)
                 Button {
-                    store.activeCheckoutAgreedPrice = nil
-                    store.activeCheckoutListing = listing
+                    store.startCheckout(for: listing)
                 } label: {
                     Image(systemName: "cart.badge.plus")
                         .font(.system(size: 13.5, weight: .bold))
@@ -643,9 +654,9 @@ public struct MarketplaceListingCard: View {
                 }
                 .accessibilityLabel("Acheter")
 
-                // Icône 2 : Faire une offre
+                // Icône 2 : Faire une offre (Viple Live ID requis)
                 Button {
-                    store.activeOfferListing = listing
+                    store.startMakeOffer(for: listing)
                 } label: {
                     Image(systemName: "tag.fill")
                         .font(.system(size: 13, weight: .bold))
@@ -656,7 +667,7 @@ public struct MarketplaceListingCard: View {
                 }
                 .accessibilityLabel("Faire une offre")
 
-                // Icône 3 : Mettre l'annonce dans ses favoris
+                // Icône 3 : Mettre l'annonce dans ses favoris (Viple Live ID requis)
                 Button {
                     store.toggleFavorite(for: listing)
                 } label: {
@@ -672,9 +683,9 @@ public struct MarketplaceListingCard: View {
                 }
                 .accessibilityLabel("Favoris")
 
-                // Icône 4 : Partager l'annonce (en message ou iOS Share)
+                // Icône 4 : Partager l'annonce (en message ou iOS Share — Viple Live ID requis)
                 Button {
-                    store.activeShareListing = listing
+                    store.startShareListing(listing)
                 } label: {
                     Image(systemName: "paperplane.fill")
                         .font(.system(size: 12.5, weight: .bold))
@@ -756,11 +767,10 @@ public struct MarketplaceListingDetailView: View {
                     .padding(14)
                 }
 
-                // Barre des 4 Boutons sous forme d'icônes (Acheter / Faire une offre / Favoris / Partager)
+                // Barre des 4 Boutons sous forme d'icônes (Acheter / Faire une offre / Favoris / Partager — Réservés Viple Live ID)
                 HStack(spacing: 12) {
                     Button {
-                        store.activeCheckoutAgreedPrice = nil
-                        store.activeCheckoutListing = liveListing
+                        store.startCheckout(for: liveListing)
                     } label: {
                         VStack(spacing: 4) {
                             Image(systemName: "cart.badge.plus")
@@ -775,7 +785,7 @@ public struct MarketplaceListingDetailView: View {
                     }
 
                     Button {
-                        store.activeOfferListing = liveListing
+                        store.startMakeOffer(for: liveListing)
                     } label: {
                         VStack(spacing: 4) {
                             Image(systemName: "tag.fill")
@@ -809,7 +819,7 @@ public struct MarketplaceListingDetailView: View {
                     }
 
                     Button {
-                        store.activeShareListing = liveListing
+                        store.startShareListing(liveListing)
                     } label: {
                         VStack(spacing: 4) {
                             Image(systemName: "paperplane.fill")
@@ -984,6 +994,7 @@ public struct MarketplaceListingDetailView: View {
                     }
 
                     Button {
+                        guard store.requireVipleLiveID(for: "envoyer un message au vendeur") else { return }
                         if store.ensureConversation(for: liveListing) != nil {
                             dismiss()
                             store.selectedTab = .messages

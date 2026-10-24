@@ -230,7 +230,56 @@ public final class LivriaSocialAPIClient {
     }
 
     public func fetchMemberPublicProfile(memberId: Int) async throws -> SocialMemberPublicProfileResponse {
-        try await getJSON("/members/\(memberId)")
+        var res: SocialMemberPublicProfileResponse = try await getJSON("/members/\(memberId)")
+        if res.marketplaceListings.isEmpty {
+            let mkt = await fetchMemberMarketplaceListings(
+                userId: memberId,
+                email: res.user.email,
+                displayName: res.user.displayName
+            )
+            if !mkt.isEmpty {
+                res.marketplaceListings = mkt
+            }
+        }
+        return res
+    }
+
+    public func fetchMemberMarketplaceListings(
+        userId: Int,
+        email: String? = nil,
+        displayName: String? = nil
+    ) async -> [SocialMarketplaceListingItem] {
+        guard var components = URLComponents(string: "https://livria.store/api/mobile/v1/marketplace/member-listings") else {
+            return []
+        }
+        var q: [URLQueryItem] = []
+        if userId > 0 {
+            q.append(URLQueryItem(name: "userId", value: String(userId)))
+        }
+        if let email, !email.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            q.append(URLQueryItem(name: "email", value: email.trimmingCharacters(in: .whitespacesAndNewlines)))
+        }
+        if let displayName, !displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            q.append(URLQueryItem(name: "displayName", value: displayName.trimmingCharacters(in: .whitespacesAndNewlines)))
+        }
+        components.queryItems = q
+        guard let url = components.url else { return [] }
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("LivriaSocial-iOS/2.0", forHTTPHeaderField: "User-Agent")
+
+        do {
+            let (data, response) = try await session.data(for: req)
+            guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+                return []
+            }
+            let decoded = try JSONDecoder().decode(SocialMemberMarketplaceListingsResponse.self, from: data)
+            return decoded.listings
+        } catch {
+            return []
+        }
     }
 
     public func searchMembers(query: String, excludeUserId: Int?) async throws -> [SocialMemberSummary] {
@@ -239,7 +288,7 @@ public final class LivriaSocialAPIClient {
             items.append(URLQueryItem(name: "excludeUserId", value: String(excludeUserId)))
         }
         let res: SocialMemberSearchResponse = try await getJSON("/members/search", queryItems: items)
-        return res.members
+        return res.members.filter { !$0.isVisitorOrGuest }
     }
 
     public func uploadMedia(mediaKind: String, fileExtension: String, data: Data) async throws -> String {

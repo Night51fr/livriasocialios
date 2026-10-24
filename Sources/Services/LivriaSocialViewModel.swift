@@ -227,7 +227,7 @@ public final class LivriaSocialViewModel: ObservableObject {
             self.lists = boot.lists
             self.myLists = boot.myLists
             self.conversations = boot.conversations
-            self.topMembers = boot.topMembers
+            self.topMembers = boot.topMembers.filter { !$0.isVisitorOrGuest }
             self.booksCatalog = boot.booksCatalog
             self.backgroundPresets = boot.backgroundPresets
             self.isServerUnreachable = false
@@ -860,7 +860,8 @@ public final class LivriaSocialViewModel: ObservableObject {
 
     public func searchMembers(query: String) async {
         do {
-            searchedMembers = try await LivriaSocialAPIClient.shared.searchMembers(query: query, excludeUserId: currentUser?.id)
+            let results = try await LivriaSocialAPIClient.shared.searchMembers(query: query, excludeUserId: currentUser?.id)
+            searchedMembers = results.filter { !$0.isVisitorOrGuest }
         } catch {
             searchedMembers = []
         }
@@ -868,6 +869,36 @@ public final class LivriaSocialViewModel: ObservableObject {
 
     public func fetchMemberProfile(memberId: Int) async -> SocialMemberPublicProfileResponse? {
         try? await LivriaSocialAPIClient.shared.fetchMemberPublicProfile(memberId: memberId)
+    }
+
+    public func fetchMemberMarketplaceListings(userId: Int, email: String? = nil, displayName: String? = nil) async -> [SocialMarketplaceListingItem] {
+        await LivriaSocialAPIClient.shared.fetchMemberMarketplaceListings(userId: userId, email: email, displayName: displayName)
+    }
+
+    public func openMarketplaceListing(_ listing: SocialMarketplaceListingItem) {
+        var urlString = listing.deepLinkUrl.isEmpty ? "livriamarketplace://listing/\(listing.id)" : listing.deepLinkUrl
+        if isAuthenticated, let u = currentUser, !u.email.lowercased().hasSuffix("@guest.livria.store") {
+            var comps = URLComponents(string: urlString)
+            var q = comps?.queryItems ?? []
+            q.append(URLQueryItem(name: "ssoUid", value: String(u.id)))
+            q.append(URLQueryItem(name: "ssoEmail", value: u.email))
+            q.append(URLQueryItem(name: "ssoName", value: u.displayName))
+            q.append(URLQueryItem(name: "ssoAvatar", value: u.avatarUrl))
+            q.append(URLQueryItem(name: "ssoSource", value: "Livria Social"))
+            comps?.queryItems = q
+            if let built = comps?.url?.absoluteString {
+                urlString = built
+            }
+        }
+        #if canImport(UIKit)
+        if let appUrl = URL(string: urlString) {
+            UIApplication.shared.open(appUrl, options: [:]) { success in
+                if !success, let webFallback = URL(string: "https://livria.store/marketplace/\(listing.id)") {
+                    UIApplication.shared.open(webFallback)
+                }
+            }
+        }
+        #endif
     }
 
     public func saveProfileCustomization(

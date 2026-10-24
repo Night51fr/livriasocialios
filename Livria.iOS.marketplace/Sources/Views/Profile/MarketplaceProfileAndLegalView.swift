@@ -21,25 +21,32 @@ public struct MarketplaceProfileView: View {
 
     public var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
-                    quickAccessEcosystemCard
-
-                    if store.isAuthenticated {
+            if !store.isAuthenticated {
+                MarketplaceVipleLiveIDRequiredGateView(
+                    featureTitle: "Mon Profil Viple Live ID",
+                    featureSubtitle: "L'accès à votre profil, le recadrage de votre photo, le suivi de vos commandes et la gestion de vos annonces sont réservés aux utilisateurs connectés avec Viple Live ID.",
+                    icon: "person.crop.circle.badge.checkmark",
+                    showQuickAccessAndLegal: true
+                )
+                .environmentObject(store)
+                .navigationTitle("Mon Profil & Paramètres")
+                .navigationBarTitleDisplayMode(.inline)
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        quickAccessEcosystemCard
                         authenticatedProfileHeaderCard
-                    } else {
-                        guestConnectCard
+                        myListingsManagementCard
+                        settingsAndAppStoreComplianceCard
                     }
-
-                    myListingsManagementCard
-                    settingsAndAppStoreComplianceCard
+                    .padding(16)
                 }
-                .padding(16)
+                .background(MarketplacePalette.background.ignoresSafeArea())
+                .navigationTitle("Mon Profil & Paramètres")
+                .navigationBarTitleDisplayMode(.inline)
             }
-            .background(MarketplacePalette.background.ignoresSafeArea())
-            .navigationTitle("Mon Profil & Paramètres")
-            .navigationBarTitleDisplayMode(.inline)
-            .onChange(of: selectedAvatarItem) { _, newItem in
+        }
+        .onChange(of: selectedAvatarItem) { _, newItem in
                 guard let newItem else { return }
                 Task {
                     #if canImport(UIKit)
@@ -471,6 +478,168 @@ public struct MarketplaceProfileView: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 12).fill(MarketplacePalette.background))
+    }
+}
+
+// MARK: - Vue d'Accès Réservé aux Utilisateurs Connectés « Viple Live ID » (Vendre, Messages, Mon Profil)
+
+public struct MarketplaceVipleLiveIDRequiredGateView: View {
+    @EnvironmentObject private var store: LivriaMarketplaceViewModel
+    public let featureTitle: String
+    public let featureSubtitle: String
+    public let icon: String
+    public var showQuickAccessAndLegal: Bool = false
+
+    public init(
+        featureTitle: String,
+        featureSubtitle: String,
+        icon: String,
+        showQuickAccessAndLegal: Bool = false
+    ) {
+        self.featureTitle = featureTitle
+        self.featureSubtitle = featureSubtitle
+        self.icon = icon
+        self.showQuickAccessAndLegal = showQuickAccessAndLegal
+    }
+
+    public var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 18) {
+                VStack(spacing: 16) {
+                    ZStack {
+                        Circle()
+                            .fill(MarketplacePalette.primarySoft)
+                            .frame(width: 78, height: 78)
+                        Image(systemName: icon)
+                            .font(.system(size: 32, weight: .bold))
+                            .foregroundStyle(MarketplacePalette.primary)
+                    }
+
+                    HStack(spacing: 6) {
+                        Image(systemName: "lock.shield.fill")
+                            .font(.system(size: 12, weight: .bold))
+                        Text("RÉSERVÉ AUX MEMBRES VIPLE LIVE ID")
+                            .font(.system(size: 10.5, weight: .black, design: .rounded))
+                            .tracking(0.6)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(Capsule().fill(MarketplacePalette.primarySoft))
+                    .foregroundStyle(MarketplacePalette.primary)
+
+                    Text(featureTitle)
+                        .font(.system(size: 21, weight: .black, design: .rounded))
+                        .foregroundStyle(MarketplacePalette.ink)
+                        .multilineTextAlignment(.center)
+
+                    Text(featureSubtitle)
+                        .font(.system(size: 13.5))
+                        .foregroundStyle(MarketplacePalette.inkMuted)
+                        .multilineTextAlignment(.center)
+                        .lineSpacing(3)
+
+                    Button {
+                        store.isShowingAuthSheet = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.crop.circle.badge.checkmark")
+                            Text("Se connecter avec Viple Live ID")
+                                .font(.system(size: 15, weight: .black, design: .rounded))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 15)
+                        .background(MarketplacePalette.heroGradient)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                }
+                .marketplaceCard(padding: 24, cornerRadius: 24)
+
+                if showQuickAccessAndLegal {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Accès Rapide & Mentions Légales")
+                            .font(.system(size: 15, weight: .black, design: .rounded))
+                            .foregroundStyle(MarketplacePalette.ink)
+
+                        Button {
+                            store.openLivriaStoreApp()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "book.fill")
+                                    .foregroundStyle(MarketplacePalette.primary)
+                                Text("Ouvrir Livria Store")
+                                    .font(.system(size: 13.5, weight: .bold))
+                                    .foregroundStyle(MarketplacePalette.ink)
+                                Spacer()
+                                Image(systemName: "arrow.up.right.circle.fill")
+                                    .foregroundStyle(MarketplacePalette.primary)
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(MarketplacePalette.background))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            store.openLivriaSocialApp()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "bubble.left.and.bubble.right.fill")
+                                    .foregroundStyle(MarketplacePalette.coral)
+                                Text("Ouvrir Livria Social")
+                                    .font(.system(size: 13.5, weight: .bold))
+                                    .foregroundStyle(MarketplacePalette.ink)
+                                Spacer()
+                                Image(systemName: "arrow.up.right.circle.fill")
+                                    .foregroundStyle(MarketplacePalette.coral)
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(MarketplacePalette.background))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            store.openLivriaStoreTroc()
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "arrow.triangle.2.circlepath")
+                                    .foregroundStyle(Color(red: 0.85, green: 0.52, blue: 0.05))
+                                Text("Ouvrir Les Trocs dans Livria Store")
+                                    .font(.system(size: 13.5, weight: .bold))
+                                    .foregroundStyle(MarketplacePalette.ink)
+                                Spacer()
+                                Image(systemName: "arrow.up.right.circle.fill")
+                                    .foregroundStyle(Color(red: 0.85, green: 0.52, blue: 0.05))
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(MarketplacePalette.background))
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            store.isShowingTermsReviewSheet = true
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "doc.text.magnifyingglass")
+                                    .foregroundStyle(MarketplacePalette.primary)
+                                Text("Relire les Conditions d'Utilisation (CGU / CGV)")
+                                    .font(.system(size: 13.5, weight: .bold))
+                                    .foregroundStyle(MarketplacePalette.ink)
+                                Spacer()
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(MarketplacePalette.inkMuted)
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(MarketplacePalette.background))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .marketplaceCard()
+                }
+            }
+            .padding(16)
+        }
+        .background(MarketplacePalette.background.ignoresSafeArea())
     }
 }
 

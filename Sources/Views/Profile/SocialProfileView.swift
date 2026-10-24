@@ -20,6 +20,7 @@ public struct SocialProfileView: View {
     @State private var cardOpacity: Double = 85
     @State private var didLoadInitialForm: Bool = false
     @State private var showingDeleteAccountConfirmation: Bool = false
+    @State private var myMarketplaceListings: [SocialMarketplaceListingItem] = []
 
     private let accentChoices = ["#8b5cf6", "#ec4899", "#06b6d4", "#f59e0b", "#10b981", "#ef4444"]
 
@@ -35,6 +36,10 @@ public struct SocialProfileView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     profileHeaderCard
+
+                    if !myMarketplaceListings.isEmpty {
+                        myMarketplaceListingsSectionCard
+                    }
 
                     myPostsSectionCard
 
@@ -55,9 +60,11 @@ public struct SocialProfileView: View {
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 syncFormWithUser()
+                Task { await loadMyMarketplaceListings() }
             }
             .onChange(of: social.currentUser?.id) { _, _ in
                 syncFormWithUser()
+                Task { await loadMyMarketplaceListings() }
             }
             .alert("Êtes-vous sûr de vouloir supprimer votre compte Viple Live ID ?", isPresented: $showingDeleteAccountConfirmation) {
                 Button("Annuler", role: .cancel) {}
@@ -200,6 +207,44 @@ public struct SocialProfileView: View {
             }
         }
         .padding(16)
+        .socialCard(opacity: cardOpacity / 100.0)
+    }
+
+    private func loadMyMarketplaceListings() async {
+        guard let u = social.currentUser else {
+            myMarketplaceListings = []
+            return
+        }
+        myMarketplaceListings = await social.fetchMemberMarketplaceListings(
+            userId: u.id,
+            email: u.email,
+            displayName: u.displayName
+        )
+    }
+
+    // MARK: - Mes Annonces Publiées sur Livria Marketplace
+
+    private var myMarketplaceListingsSectionCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("ANNONCES MARKETPLACE (\(myMarketplaceListings.count))", systemImage: "bag.fill")
+                    .font(.system(size: 12, weight: .black, design: .rounded))
+                    .foregroundStyle(LivriaSocialPalette.gold)
+                Spacer()
+                Text("Livria Marketplace")
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(LivriaSocialPalette.accent)
+            }
+
+            VStack(spacing: 10) {
+                ForEach(myMarketplaceListings) { item in
+                    ProfileMarketplaceListingRowView(listing: item) {
+                        social.openMarketplaceListing(item)
+                    }
+                }
+            }
+        }
+        .padding(15)
         .socialCard(opacity: cardOpacity / 100.0)
     }
 
@@ -584,6 +629,21 @@ public struct MemberPublicProfileView: View {
         return social.lists.filter { $0.userId == memberId || $0.creator.id == memberId }
     }
 
+    private var memberMarketplaceListings: [SocialMarketplaceListingItem] {
+        detail?.marketplaceListings ?? []
+    }
+
+    private var segmentedProfileTabs: [(Int, String, String)] {
+        var tabs: [(Int, String, String)] = [
+            (0, "Publications (\(memberPosts.count))", "sparkles.rectangle.stack.fill"),
+            (1, "Listes (\(memberLists.count))", "books.vertical.fill")
+        ]
+        if !memberMarketplaceListings.isEmpty {
+            tabs.append((2, "Annonces (\(memberMarketplaceListings.count))", "bag.fill"))
+        }
+        return tabs
+    }
+
     public var body: some View {
         ScrollView {
             if isLoading && detail == nil && initialSummary == nil {
@@ -649,6 +709,9 @@ public struct MemberPublicProfileView: View {
                         HStack(spacing: 10) {
                             memberStatPill(value: "\(memberPosts.count)", label: "Posts", icon: "text.bubble.fill")
                             memberStatPill(value: "\(memberLists.count)", label: "Listes", icon: "books.vertical.fill")
+                            if !memberMarketplaceListings.isEmpty {
+                                memberStatPill(value: "\(memberMarketplaceListings.count)", label: "Annonces", icon: "bag.fill")
+                            }
                             memberStatPill(value: "\(detail?.booksReadCount ?? 0)", label: "Lus", icon: "book.closed.fill")
                             memberStatPill(value: "\(xp)", label: "XP", icon: "bolt.fill")
                         }
@@ -676,16 +739,34 @@ public struct MemberPublicProfileView: View {
                     .frame(maxWidth: .infinity)
                     .socialCard(opacity: cardOpacity)
 
-                    // 2. Sélecteur de section : Publications du profil | Listes & Lectures
+                    // 2. Sélecteur de section : Publications du profil | Listes & Lectures | Annonces Marketplace (si le membre en a publié)
                     SocialSegmentedPillBar(
-                        items: [
-                            (0, "Publications (\(memberPosts.count))", "sparkles.rectangle.stack.fill"),
-                            (1, "Listes (\(memberLists.count))", "books.vertical.fill")
-                        ],
+                        items: segmentedProfileTabs,
                         selection: $selectedSection
                     )
 
-                    if selectedSection == 0 {
+                    if selectedSection == 2 {
+                        // Annonces publiées sur Livria Marketplace par ce membre
+                        VStack(alignment: .leading, spacing: 12) {
+                            HStack {
+                                Label("ANNONCES DE \(displayName.uppercased()) SUR MARKETPLACE", systemImage: "bag.fill")
+                                    .font(.system(size: 11.5, weight: .black, design: .rounded))
+                                    .foregroundStyle(LivriaSocialPalette.gold)
+                                Spacer()
+                                Text("\(memberMarketplaceListings.count) en vente")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .foregroundStyle(LivriaSocialPalette.emerald)
+                            }
+
+                            ForEach(memberMarketplaceListings) { item in
+                                ProfileMarketplaceListingRowView(listing: item) {
+                                    social.openMarketplaceListing(item)
+                                }
+                            }
+                        }
+                        .padding(14)
+                        .socialCard(opacity: cardOpacity)
+                    } else if selectedSection == 0 {
                         // Publications (Posts) du profil en question
                         VStack(alignment: .leading, spacing: 12) {
                             HStack {
@@ -850,6 +931,100 @@ public struct MemberPublicProfileView: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.07)))
+    }
+}
+
+// MARK: - Carte d'une Annonce Livria Marketplace affichée dans le profil d'un membre (ouvre l'annonce dans Livria Marketplace)
+
+private struct ProfileMarketplaceListingRowView: View {
+    let listing: SocialMarketplaceListingItem
+    let onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.10))
+                        .frame(width: 68, height: 84)
+
+                    if !listing.firstPhotoUrl.isEmpty,
+                       let url = URL(string: listing.firstPhotoUrl.hasPrefix("http") ? listing.firstPhotoUrl : "https://livria.store\(listing.firstPhotoUrl)") {
+                        AsyncImage(url: url) { phase in
+                            if case .success(let image) = phase {
+                                image
+                                    .resizable()
+                                    .scaledToFill()
+                                    .frame(width: 68, height: 84)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            } else {
+                                Image(systemName: "bag.fill")
+                                    .font(.system(size: 22, weight: .bold))
+                                    .foregroundStyle(LivriaSocialPalette.gold)
+                            }
+                        }
+                    } else {
+                        Image(systemName: "bag.fill")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(LivriaSocialPalette.gold)
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 6) {
+                        Text(listing.categoryLabel)
+                            .font(.system(size: 10, weight: .black, design: .rounded))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 3)
+                            .background(Capsule().fill(LivriaSocialPalette.primary.opacity(0.28)))
+                            .foregroundStyle(.white)
+
+                        Text(listing.condition)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(LivriaSocialPalette.emerald)
+                    }
+
+                    Text(listing.title)
+                        .font(.system(size: 14, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+
+                    if !listing.subtitleOrCreator.isEmpty {
+                        Text(listing.subtitleOrCreator)
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(LivriaSocialPalette.textMuted)
+                            .lineLimit(1)
+                    }
+
+                    HStack(spacing: 6) {
+                        Text(String(format: "%.2f €", listing.sellerPrice))
+                            .font(.system(size: 14, weight: .black, design: .rounded))
+                            .foregroundStyle(LivriaSocialPalette.gold)
+
+                        Text("• Ouvrir dans Livria Marketplace")
+                            .font(.system(size: 10.5, weight: .bold))
+                            .foregroundStyle(LivriaSocialPalette.accent)
+                    }
+                }
+
+                Spacer(minLength: 4)
+
+                Image(systemName: "arrow.up.forward.app.fill")
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(LivriaSocialPalette.gold)
+            }
+            .padding(11)
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color.white.opacity(0.07))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(LivriaSocialPalette.border, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
     }
 }
 

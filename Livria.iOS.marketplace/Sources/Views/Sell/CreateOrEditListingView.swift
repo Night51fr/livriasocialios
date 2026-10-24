@@ -58,46 +58,58 @@ public struct CreateOrEditListingView: View {
 
     public var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 18) {
-                    wizardStepHeader
+            if !store.isAuthenticated {
+                MarketplaceVipleLiveIDRequiredGateView(
+                    featureTitle: "Vendre sur Livria Marketplace",
+                    featureSubtitle: "La publication, la modification et la gestion de vos annonces (Livres, CD/DVD, Accessoires et Vêtements) sont réservées aux membres connectés avec Viple Live ID.",
+                    icon: "plus.rectangle.on.folder.fill"
+                )
+                .environmentObject(store)
+                .navigationTitle("Vendre sur Livria Marketplace")
+                .navigationBarTitleDisplayMode(.inline)
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 18) {
+                        wizardStepHeader
 
-                    switch currentStep {
-                    case 1:
-                        step1CategoryAndISBNView
-                    case 2:
-                        step2PhotosUploadAndCropperView
-                    case 3:
-                        step3DetailsAndConditionView
-                    default:
-                        step4PricingAndReviewView
-                    }
+                        switch currentStep {
+                        case 1:
+                            step1CategoryAndISBNView
+                        case 2:
+                            step2PhotosUploadAndCropperView
+                        case 3:
+                            step3DetailsAndConditionView
+                        default:
+                            step4PricingAndReviewView
+                        }
 
-                    wizardNavigationFooter
+                        wizardNavigationFooter
 
-                    if let existingListing {
-                        Button(role: .destructive) {
-                            showingDeleteAlert = true
-                        } label: {
-                            HStack {
-                                Image(systemName: "trash.fill")
-                                Text("Supprimer définitivement cette annonce")
-                                    .font(.system(size: 14, weight: .bold))
+                        if let existingListing {
+                            Button(role: .destructive) {
+                                showingDeleteAlert = true
+                            } label: {
+                                HStack {
+                                    Image(systemName: "trash.fill")
+                                    Text("Supprimer définitivement cette annonce")
+                                        .font(.system(size: 14, weight: .bold))
+                                }
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 13)
+                                .background(RoundedRectangle(cornerRadius: 14).fill(Color.red.opacity(0.14)))
+                                .foregroundStyle(.red)
                             }
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 13)
-                            .background(RoundedRectangle(cornerRadius: 14).fill(Color.red.opacity(0.14)))
-                            .foregroundStyle(.red)
                         }
                     }
+                    .padding(16)
                 }
-                .padding(16)
+                .background(MarketplacePalette.background.ignoresSafeArea())
+                .navigationTitle(existingListing != nil ? "Modifier mon annonce" : "Vendre sur Livria Marketplace")
+                .navigationBarTitleDisplayMode(.inline)
             }
-            .background(MarketplacePalette.background.ignoresSafeArea())
-            .navigationTitle(existingListing != nil ? "Modifier mon annonce" : "Vendre sur Livria Marketplace")
-            .navigationBarTitleDisplayMode(.inline)
-            .onAppear {
-                populateIfEditing()
+        }
+        .onAppear {
+            populateIfEditing()
             }
             .onChange(of: multiPhotoItems) { _, newItems in
                 guard !newItems.isEmpty else { return }

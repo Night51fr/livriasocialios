@@ -222,6 +222,23 @@ public struct SocialMemberSummary: Codable, Identifiable, Equatable, Hashable, S
             ?? displayName.lowercased().replacingOccurrences(of: " ", with: "")
         return "@\(base.isEmpty ? "lecteur" : base)"
     }
+
+    public var isVisitorOrGuest: Bool {
+        let lowerName = displayName.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if lowerName.isEmpty
+            || lowerName.contains("visiteur")
+            || lowerName.contains("invité")
+            || lowerName.contains("invite")
+            || lowerName.hasPrefix("guest") {
+            return true
+        }
+        if let em = email?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased(), !em.isEmpty {
+            if em.hasSuffix("@guest.livria.store") || em.hasPrefix("guest-") || em.contains("@guest.") {
+                return true
+            }
+        }
+        return false
+    }
 }
 
 public struct SocialBookItem: Codable, Identifiable, Equatable, Hashable, Sendable {
@@ -384,6 +401,106 @@ public struct SocialThreadResponse: Codable, Sendable {
     public var messages: [SocialRichMessageItem]
 }
 
+public struct SocialMarketplaceListingItem: Codable, Identifiable, Equatable, Hashable, Sendable {
+    public var id: Int
+    public var category: String
+    public var subcategory: String
+    public var title: String
+    public var subtitleOrCreator: String
+    public var condition: String
+    public var sellerPrice: Double
+    public var livriaCommission: Double
+    public var buyerTotalPrice: Double
+    public var photoUrls: [String]
+    public var firstPhotoUrl: String
+    public var sellerUserId: Int
+    public var sellerDisplayName: String
+    public var sellerCity: String
+    public var createdAt: String
+    public var deepLinkUrl: String
+
+    enum CodingKeys: String, CodingKey {
+        case id, category, subcategory, title, subtitleOrCreator, condition
+        case sellerPrice, livriaCommission, buyerTotalPrice
+        case photoUrls, firstPhotoUrl, sellerUserId, sellerDisplayName, sellerCity
+        case createdAt, deepLinkUrl
+    }
+
+    public init(
+        id: Int,
+        category: String = "books",
+        subcategory: String = "Roman",
+        title: String,
+        subtitleOrCreator: String = "",
+        condition: String = "Très bon état",
+        sellerPrice: Double,
+        livriaCommission: Double = 1.0,
+        buyerTotalPrice: Double? = nil,
+        photoUrls: [String] = [],
+        firstPhotoUrl: String = "",
+        sellerUserId: Int = 0,
+        sellerDisplayName: String = "",
+        sellerCity: String = "France",
+        createdAt: String = "Récemment",
+        deepLinkUrl: String = ""
+    ) {
+        self.id = id
+        self.category = category
+        self.subcategory = subcategory
+        self.title = title
+        self.subtitleOrCreator = subtitleOrCreator
+        self.condition = condition
+        self.sellerPrice = sellerPrice
+        self.livriaCommission = livriaCommission
+        self.buyerTotalPrice = buyerTotalPrice ?? (sellerPrice + livriaCommission)
+        self.photoUrls = photoUrls
+        self.firstPhotoUrl = firstPhotoUrl.isEmpty ? (photoUrls.first ?? "") : firstPhotoUrl
+        self.sellerUserId = sellerUserId
+        self.sellerDisplayName = sellerDisplayName
+        self.sellerCity = sellerCity
+        self.createdAt = createdAt
+        self.deepLinkUrl = deepLinkUrl.isEmpty ? "livriamarketplace://listing/\(id)" : deepLinkUrl
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = (try? c.decode(Int.self, forKey: .id)) ?? 0
+        category = (try? c.decode(String.self, forKey: .category)) ?? "books"
+        subcategory = (try? c.decode(String.self, forKey: .subcategory)) ?? ""
+        title = (try? c.decode(String.self, forKey: .title)) ?? ""
+        subtitleOrCreator = (try? c.decode(String.self, forKey: .subtitleOrCreator)) ?? ""
+        condition = (try? c.decode(String.self, forKey: .condition)) ?? "Très bon état"
+        sellerPrice = (try? c.decode(Double.self, forKey: .sellerPrice)) ?? 0
+        livriaCommission = (try? c.decode(Double.self, forKey: .livriaCommission)) ?? 1.0
+        buyerTotalPrice = (try? c.decode(Double.self, forKey: .buyerTotalPrice)) ?? (sellerPrice + livriaCommission)
+        photoUrls = (try? c.decode([String].self, forKey: .photoUrls)) ?? []
+        let firstPhoto = (try? c.decode(String.self, forKey: .firstPhotoUrl)) ?? ""
+        firstPhotoUrl = firstPhoto.isEmpty ? (photoUrls.first ?? "") : firstPhoto
+        sellerUserId = (try? c.decode(Int.self, forKey: .sellerUserId)) ?? 0
+        sellerDisplayName = (try? c.decode(String.self, forKey: .sellerDisplayName)) ?? ""
+        sellerCity = (try? c.decode(String.self, forKey: .sellerCity)) ?? "France"
+        createdAt = (try? c.decode(String.self, forKey: .createdAt)) ?? "Récemment"
+        let link = (try? c.decode(String.self, forKey: .deepLinkUrl)) ?? ""
+        deepLinkUrl = link.isEmpty ? "livriamarketplace://listing/\(id)" : link
+    }
+
+    public var categoryLabel: String {
+        switch category.lowercased() {
+        case "books": return "📖 Livre"
+        case "cddvd": return "💿 CD / DVD"
+        case "accessories": return "🎁 Accessoire"
+        case "clothing": return "👕 Vêtement"
+        default: return "🛍️ Annonce"
+        }
+    }
+}
+
+public struct SocialMemberMarketplaceListingsResponse: Codable, Sendable {
+    public var ok: Bool
+    public var count: Int?
+    public var listings: [SocialMarketplaceListingItem]
+}
+
 public struct SocialMemberPublicProfileResponse: Codable, Sendable {
     public var ok: Bool
     public var user: SocialUserProfile
@@ -393,8 +510,26 @@ public struct SocialMemberPublicProfileResponse: Codable, Sendable {
     public var posts: [SocialFeedPost]
     public var lists: [SocialBookListModel]
     public var readBooks: [SocialBookItem]
+    public var marketplaceListings: [SocialMarketplaceListingItem]
 
     public var member: SocialUserProfile { user }
+
+    enum CodingKeys: String, CodingKey {
+        case ok, user, booksReadCount, postsCount, listsCount, posts, lists, readBooks, marketplaceListings
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+        user = try c.decode(SocialUserProfile.self, forKey: .user)
+        booksReadCount = (try? c.decode(Int.self, forKey: .booksReadCount)) ?? 0
+        postsCount = (try? c.decode(Int.self, forKey: .postsCount)) ?? 0
+        listsCount = (try? c.decode(Int.self, forKey: .listsCount)) ?? 0
+        posts = (try? c.decode([SocialFeedPost].self, forKey: .posts)) ?? []
+        lists = (try? c.decode([SocialBookListModel].self, forKey: .lists)) ?? []
+        readBooks = (try? c.decode([SocialBookItem].self, forKey: .readBooks)) ?? []
+        marketplaceListings = (try? c.decodeIfPresent([SocialMarketplaceListingItem].self, forKey: .marketplaceListings)) ?? []
+    }
 }
 
 public struct SocialMemberSearchResponse: Codable, Sendable {
