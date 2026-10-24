@@ -72,6 +72,40 @@ public struct CreateOrEditListingView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         wizardStepHeader
 
+                        if existingListing == nil, let draft = store.savedListingDraft {
+                            HStack(spacing: 10) {
+                                Image(systemName: "doc.badge.clock")
+                                    .font(.system(size: 18, weight: .bold))
+                                    .foregroundStyle(MarketplacePalette.primary)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Brouillon enregistré : « \(draft.title.isEmpty ? "Annonce en cours" : draft.title) »")
+                                        .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                                        .foregroundStyle(MarketplacePalette.ink)
+                                    Text("Reprenez votre saisie là où vous l'aviez laissée.")
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(MarketplacePalette.inkMuted)
+                                }
+                                Spacer()
+                                Button("Restaurer") {
+                                    restoreFromDraft(draft)
+                                }
+                                .font(.system(size: 11.5, weight: .black, design: .rounded))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(MarketplacePalette.primary))
+                                .foregroundStyle(.white)
+
+                                Button {
+                                    store.clearListingDraft()
+                                } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(MarketplacePalette.inkMuted)
+                                }
+                            }
+                            .padding(12)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(MarketplacePalette.primarySoft.opacity(0.6)))
+                        }
+
                         switch currentStep {
                         case 1:
                             step1CategoryAndISBNView
@@ -806,9 +840,59 @@ public struct CreateOrEditListingView: View {
                 }
             }
         }
+        if existingListing == nil {
+            Button {
+                let draft = MarketplaceListingDraft(
+                    categoryRaw: selectedCategory.rawValue,
+                    subcategory: selectedSubcategory,
+                    title: title,
+                    subtitle: subtitle,
+                    descriptionText: descriptionText,
+                    condition: selectedCondition,
+                    priceString: priceString,
+                    originalPriceString: retailPriceString,
+                    isbnInput: isbnCode,
+                    authorOrArtist: authorOrArtist,
+                    publisherOrBrand: publisherOrBrand,
+                    releaseYear: releaseYear,
+                    clothingSize: clothingSize,
+                    photos: uploadedPhotoUrls
+                )
+                store.saveListingDraft(draft)
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "tray.and.arrow.down.fill")
+                    Text("Sauvegarder cette annonce en brouillon local")
+                }
+                .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 12).fill(MarketplacePalette.primarySoft.opacity(0.5)))
+                .foregroundStyle(MarketplacePalette.primary)
+            }
+            .buttonStyle(.plain)
+        }
     }
 
     // MARK: - Helpers & Actions
+
+    private func restoreFromDraft(_ draft: MarketplaceListingDraft) {
+        selectedCategory = MarketplaceCategory(rawValue: draft.categoryRaw) ?? .books
+        selectedSubcategory = draft.subcategory
+        title = draft.title
+        subtitle = draft.subtitle
+        descriptionText = draft.descriptionText
+        selectedCondition = draft.condition
+        priceString = draft.priceString
+        retailPriceString = draft.originalPriceString
+        isbnCode = draft.isbnInput
+        authorOrArtist = draft.authorOrArtist
+        publisherOrBrand = draft.publisherOrBrand
+        releaseYear = draft.releaseYear
+        clothingSize = draft.clothingSize
+        uploadedPhotoUrls = draft.photos
+        store.showToast("Brouillon restauré !")
+    }
 
     private func populateIfEditing() {
         guard let item = existingListing else { return }
@@ -948,6 +1032,7 @@ public struct CreateOrEditListingView: View {
             dismiss()
         } else {
             // Réinitialise et retourne sur l'explorateur
+            store.clearListingDraft()
             currentStep = 1
             title = ""
             subtitle = ""

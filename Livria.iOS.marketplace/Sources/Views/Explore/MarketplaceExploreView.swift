@@ -1,4 +1,7 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Explorer Livria Marketplace (Priorité N°1 Livres > CD/DVD > Accessoires > Vêtements + Cards Multi-Photos Swipeables)
 
@@ -16,10 +19,14 @@ public struct MarketplaceExploreView: View {
                     searchAndFilterSection
                     categoryPriorityTabsSection
 
+                    if !store.recentlyViewedListings.isEmpty && store.searchQuery.isEmpty && !store.showOnlyFavorites {
+                        recentlyViewedSection
+                    }
+
                     if store.selectedCategory != .all {
                         subcategoryPillsSection
                         dedicatedCategorySection(for: store.selectedCategory)
-                    } else if !store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.showOnlyFavorites {
+                    } else if !store.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.showOnlyFavorites || store.selectedConditionFilter != "Tous états" || store.maxPriceCeiling > 0 {
                         filteredResultsSection
                     } else {
                         // Vue structurée par rubriques bien séparées dans l'ordre strict :
@@ -33,6 +40,9 @@ public struct MarketplaceExploreView: View {
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 14)
+            }
+            .refreshable {
+                await store.bootstrap()
             }
             .background(MarketplacePalette.background.ignoresSafeArea())
             .navigationDestination(item: $selectedListingForDetail) { listing in
@@ -138,16 +148,20 @@ public struct MarketplaceExploreView: View {
         .marketplaceCard(padding: 16, cornerRadius: 22)
     }
 
-    // MARK: - Barre de Recherche & Filtres
+    // MARK: - Barre de Recherche & Filtres (Recherches Récentes, État, Plafond de Prix, Favoris)
 
     private var searchAndFilterSection: some View {
-        VStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .foregroundStyle(MarketplacePalette.primary)
                     TextField("Rechercher un livre, ISBN, auteur, CD, DVD, mug...", text: $store.searchQuery)
                         .font(.system(size: 14))
+                        .submitLabel(.search)
+                        .onSubmit {
+                            store.addRecentSearch(store.searchQuery)
+                        }
                     if !store.searchQuery.isEmpty {
                         Button {
                             store.searchQuery = ""
@@ -163,7 +177,6 @@ public struct MarketplaceExploreView: View {
                 .overlay(RoundedRectangle(cornerRadius: 14).stroke(MarketplacePalette.border, lineWidth: 1))
 
                 Button {
-                    guard store.requireVipleLiveID(for: "consulter vos annonces favorites") else { return }
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         store.showOnlyFavorites.toggle()
                     }
@@ -185,6 +198,139 @@ public struct MarketplaceExploreView: View {
                         RoundedRectangle(cornerRadius: 14)
                             .stroke(store.showOnlyFavorites ? MarketplacePalette.coral : MarketplacePalette.border, lineWidth: 1)
                     )
+                }
+            }
+
+            // Recherches récentes sauvegardées localement (visibles uniquement si l'utilisateur a cherché)
+            if !store.recentSearchQueries.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "clock.arrow.circlepath")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(MarketplacePalette.inkMuted)
+                        ForEach(store.recentSearchQueries, id: \.self) { recent in
+                            Button {
+                                store.searchQuery = recent
+                            } label: {
+                                Text(recent)
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4.5)
+                                    .background(Capsule().fill(Color.white))
+                                    .overlay(Capsule().stroke(MarketplacePalette.border, lineWidth: 1))
+                                    .foregroundStyle(MarketplacePalette.ink)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Button {
+                            store.clearRecentSearches()
+                        } label: {
+                            Text("Effacer")
+                                .font(.system(size: 10.5, weight: .bold))
+                                .foregroundStyle(MarketplacePalette.coral)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            // Filtres rapides : État de l'article & Plafond de prix
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    Menu {
+                        ForEach(["Tous états", "Neuf", "Comme neuf", "Très bon état", "Bon état"], id: \.self) { cond in
+                            Button {
+                                store.selectedConditionFilter = cond
+                            } label: {
+                                HStack {
+                                    Text(cond)
+                                    if store.selectedConditionFilter == cond {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 11, weight: .bold))
+                            Text(store.selectedConditionFilter)
+                                .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 9, weight: .bold))
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(store.selectedConditionFilter == "Tous états" ? Color.white : MarketplacePalette.primarySoft))
+                        .overlay(Capsule().stroke(MarketplacePalette.border, lineWidth: 1))
+                        .foregroundStyle(store.selectedConditionFilter == "Tous états" ? MarketplacePalette.ink : MarketplacePalette.primary)
+                    }
+
+                    ForEach([(0.0, "Tous prix"), (5.0, "≤ 5 €"), (10.0, "≤ 10 €"), (20.0, "≤ 20 €"), (35.0, "≤ 35 €")], id: \.0) { ceiling, label in
+                        let isSelected = store.maxPriceCeiling == ceiling
+                        Button {
+                            withAnimation(.spring(response: 0.25)) {
+                                store.maxPriceCeiling = ceiling
+                            }
+                        } label: {
+                            Text(label)
+                                .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Capsule().fill(isSelected ? MarketplacePalette.primary : Color.white))
+                                .overlay(Capsule().stroke(isSelected ? MarketplacePalette.primary : MarketplacePalette.border, lineWidth: 1))
+                                .foregroundStyle(isSelected ? .white : MarketplacePalette.ink)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Section Récemment Consultés (Locale & Sans Données Démo)
+
+    private var recentlyViewedSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Récemment consultés", systemImage: "eye.fill")
+                    .font(.system(size: 15, weight: .black, design: .rounded))
+                    .foregroundStyle(MarketplacePalette.ink)
+                Spacer()
+                Button("Effacer") {
+                    store.clearRecentlyViewedListings()
+                }
+                .font(.system(size: 11.5, weight: .bold))
+                .foregroundStyle(MarketplacePalette.inkMuted)
+            }
+
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(store.recentlyViewedListings.prefix(10)) { item in
+                        Button {
+                            selectedListingForDetail = item
+                        } label: {
+                            HStack(spacing: 8) {
+                                MarketplaceSmartImage(urlString: item.photos.first, contentMode: .fill)
+                                    .frame(width: 44, height: 44)
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(item.title)
+                                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                                        .foregroundStyle(MarketplacePalette.ink)
+                                        .lineLimit(1)
+                                    Text(String(format: "%.2f € • %@", item.price, item.condition))
+                                        .font(.system(size: 10.5, weight: .semibold))
+                                        .foregroundStyle(MarketplacePalette.primary)
+                                }
+                            }
+                            .frame(width: 195, alignment: .leading)
+                            .padding(8)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(Color.white))
+                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(MarketplacePalette.border, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
         }
@@ -719,6 +865,7 @@ public struct MarketplaceListingDetailView: View {
 
     @State private var currentPhotoIndex: Int = 0
     @State private var showingDeleteConfirm: Bool = false
+    @State private var showingReportSheet: Bool = false
 
     private var liveListing: MarketplaceListing {
         store.listings.first(where: { $0.id == listing.id }) ?? listing
@@ -944,7 +1091,20 @@ public struct MarketplaceListingDetailView: View {
                         if let isbn = liveListing.isbn, !isbn.isEmpty {
                             GridRow {
                                 Text("Code ISBN").font(.caption.bold()).foregroundStyle(MarketplacePalette.inkMuted)
-                                Text(isbn).font(.caption.monospaced().bold())
+                                HStack(spacing: 6) {
+                                    Text(isbn).font(.caption.monospaced().bold())
+                                    Button {
+                                        #if canImport(UIKit)
+                                        UIPasteboard.general.string = isbn
+                                        #endif
+                                        store.showToast("ISBN \(isbn) copié")
+                                    } label: {
+                                        Image(systemName: "doc.on.doc")
+                                            .font(.caption2.bold())
+                                            .foregroundStyle(MarketplacePalette.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                         }
                         if let size = liveListing.clothingSize, !size.isEmpty {
@@ -1045,6 +1205,32 @@ public struct MarketplaceListingDetailView: View {
                         }
                     }
                     .marketplaceCard()
+                } else {
+                    HStack {
+                        Button {
+                            #if canImport(UIKit)
+                            UIPasteboard.general.string = "livriamarketplace://listing/\(liveListing.id)"
+                            #endif
+                            store.showToast("Lien de l'annonce copié")
+                        } label: {
+                            Label("Copier le lien de l'annonce", systemImage: "link")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(MarketplacePalette.inkMuted)
+                        }
+                        .buttonStyle(.plain)
+
+                        Spacer()
+
+                        Button {
+                            showingReportSheet = true
+                        } label: {
+                            Label("Signaler l'annonce", systemImage: "flag")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(MarketplacePalette.coral)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 6)
                 }
             }
             .padding(16)
@@ -1052,6 +1238,19 @@ public struct MarketplaceListingDetailView: View {
         .background(MarketplacePalette.background.ignoresSafeArea())
         .navigationTitle(liveListing.title)
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            store.recordListingViewed(liveListing)
+        }
+        .confirmationDialog("Signaler cette annonce à la modération Livria", isPresented: $showingReportSheet, titleVisibility: .visible) {
+            ForEach(["Article non conforme à la rubrique", "Prix ou description trompeuse", "Contrefaçon ou contenu interdit", "Spam / Doublon"], id: \.self) { reason in
+                Button(reason) {
+                    Task {
+                        await store.reportListing(liveListing, reason: reason, details: "Signalé depuis iOS Marketplace")
+                    }
+                }
+            }
+            Button("Annuler", role: .cancel) {}
+        }
         .alert("Supprimer cette annonce ?", isPresented: $showingDeleteConfirm) {
             Button("Annuler", role: .cancel) {}
             Button("Supprimer définitivement", role: .destructive) {

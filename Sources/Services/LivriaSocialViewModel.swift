@@ -58,6 +58,21 @@ public final class LivriaSocialViewModel: ObservableObject {
     // Profil membre ouvert par lien direct depuis Livria Store (livriasocial://profile/{id})
     @Published public var deepLinkedMemberProfile: SocialMemberSummary? = nil
 
+    // Signets / Publications & Listes Enregistrées, Tri du Fil, Brouillon & Suivi Viple Delivery Intégré
+    @Published public var bookmarkedPostIds: Set<Int> = []
+    @Published public var bookmarkedListIds: Set<Int> = []
+    @Published public var feedPostQuery: String = ""
+    @Published public var feedSortMode: String = "Récents"
+    @Published public var savedPostDraftText: String = ""
+    @Published public var userShipments: [SocialVipleDeliveryTrackResponse] = []
+    @Published public var activeTrackingResult: SocialVipleDeliveryTrackResponse? = nil
+    @Published public var isShowingVipleDeliverySheet: Bool = false
+    @Published public var isTrackingLoading: Bool = false
+    @Published public var userPreferences: SocialUserPreferences = SocialUserPreferences()
+    @Published public var lastDiagnosticsPing: SocialDiagnosticsPingResponse? = nil
+    @Published public var lastPingLatencyMs: Int = 0
+    @Published public var privacyExportJSON: String? = nil
+
     private let defaults = UserDefaults.standard
     private let acceptedTermsKey = "livria.social.ios.acceptedCGU.v1"
     private let savedEmailKey = "livria.social.ios.authEmail.v2"
@@ -72,6 +87,17 @@ public final class LivriaSocialViewModel: ObservableObject {
         defaults.removeObject(forKey: "livria.social.ios.vipleLiveUserId")
 
         self.hasAcceptedTermsOfUse = defaults.bool(forKey: acceptedTermsKey)
+        if let savedBookmarks = defaults.array(forKey: "livria.social.ios.bookmarkedPosts.v1") as? [Int] {
+            self.bookmarkedPostIds = Set(savedBookmarks)
+        }
+        if let savedListBookmarks = defaults.array(forKey: "livria.social.ios.bookmarkedLists.v1") as? [Int] {
+            self.bookmarkedListIds = Set(savedListBookmarks)
+        }
+        self.savedPostDraftText = defaults.string(forKey: "livria.social.ios.postDraft.v1") ?? ""
+        if let prefData = defaults.data(forKey: "livria.social.ios.prefs.v1"),
+           let prefs = try? JSONDecoder().decode(SocialUserPreferences.self, from: prefData) {
+            self.userPreferences = prefs
+        }
 
         let savedEmail = defaults.string(forKey: savedEmailKey) ?? ""
         let savedUid = defaults.integer(forKey: savedUserIdKey)
@@ -245,6 +271,9 @@ public final class LivriaSocialViewModel: ObservableObject {
             if hasClaimedDailyToday { syncedGames.canClaimDaily = false }
             if hasSpunWheelToday { syncedGames.canSpinWheel = false }
             self.games = syncedGames
+            Task {
+                await self.loadUserShipments()
+            }
         } catch let nsErr as NSError where nsErr.code == 401 {
             self.isAuthenticated = false
             self.currentUser = nil
@@ -1084,5 +1113,187 @@ public final class LivriaSocialViewModel: ObservableObject {
                 profileUrl: "https://livriasocial.viplenetwork.com/u/\(memberId)"
             )
         }
+    }
+
+    // MARK: - 9. Signets (🔖 Enregistrés), Recherche & Tri du Fil, Brouillon, Suivi Viple Delivery Intégré & Réglages
+
+    public var displayedFeedPosts: [SocialFeedPost] {
+        var result = posts
+        if feedFilter == "saved" {
+            result = result.filter { bookmarkedPostIds.contains($0.id) }
+        }
+        let q = feedPostQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !q.isEmpty {
+            result = result.filter {
+                $0.content.localizedCaseInsensitiveContains(q) ||
+                $0.author.displayName.localizedCaseInsensitiveContains(q) ||
+                $0.moodBadge.localizedCaseInsensitiveContains(q) ||
+                ($0.recommendedBook?.title.localizedCaseInsensitiveContains(q) ?? false) ||
+                ($0.recommendedBook?.author.localizedCaseInsensitiveContains(q) ?? false)
+            }
+        }
+        switch feedSortMode {
+        case "Populaires 🔥":
+            return result.sorted {
+                ($0.likesCount + $0.fireCount + $0.bookLoveCount + $0.clapCount) >
+                ($1.likesCount + $1.fireCount + $1.bookLoveCount + $1.clapCount)
+            }
+        case "Commentés 💬":
+            return result.sorted { $0.comments.count > $1.comments.count }
+        default:
+            return result
+        }
+    }
+
+    public var bookmarkedPosts: [SocialFeedPost] {
+        posts.filter { bookmarkedPostIds.contains($0.id) }
+    }
+
+    public func isPostBookmarked(_ postId: Int) -> Bool {
+        bookmarkedPostIds.contains(postId)
+    }
+
+    public func togglePostBookmark(_ postId: Int) {
+        if bookmarkedPostIds.contains(postId) {
+            bookmarkedPostIds.remove(postId)
+            showToast("Publication retirée de vos signets")
+        } else {
+            bookmarkedPostIds.insert(postId)
+            showToast("Publication enregistrée dans vos signets 🔖")
+        }
+        defaults.set(Array(bookmarkedPostIds), forKey: "livria.social.ios.bookmarkedPosts.v1")
+        triggerHapticFeedback()
+    }
+
+    public func isListBookmarked(_ listId: Int) -> Bool {
+        bookmarkedListIds.contains(listId)
+    }
+
+    public func toggleListBookmark(_ listId: Int) {
+        if bookmarkedListIds.contains(listId) {
+            bookmarkedListIds.remove(listId)
+            showToast("Liste retirée de vos favoris")
+        } else {
+            bookmarkedListIds.insert(listId)
+            showToast("Liste ajoutée à vos favoris 🔖")
+        }
+        defaults.set(Array(bookmarkedListIds), forKey: "livria.social.ios.bookmarkedLists.v1")
+        triggerHapticFeedback()
+    }
+
+    public func savePostDraft(_ text: String) {
+        savedPostDraftText = text
+        defaults.set(text, forKey: "livria.social.ios.postDraft.v1")
+    }
+
+    public func clearPostDraft() {
+        savedPostDraftText = ""
+        defaults.removeObject(forKey: "livria.social.ios.postDraft.v1")
+    }
+
+    public func reportPost(_ post: SocialFeedPost, reason: String, details: String = "Signalement iOS") async {
+        let uid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        let email = currentUser?.email ?? defaults.string(forKey: savedEmailKey) ?? ""
+        _ = await LivriaSocialAPIClient.shared.reportPost(
+            postId: post.id,
+            userId: uid,
+            email: email,
+            reason: reason,
+            details: details
+        )
+        triggerHapticFeedback()
+        showToast("Signalement transmis à la modération Livria Social.")
+    }
+
+    // MARK: - Suivi Colis Viple Delivery Intégré (Sans Ouvrir le Site Externe)
+
+    public func loadUserShipments() async {
+        let uid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        let email = currentUser?.email ?? defaults.string(forKey: savedEmailKey) ?? ""
+        guard uid > 0 || !email.isEmpty else { return }
+        let found = await LivriaSocialAPIClient.shared.fetchUserShipments(userId: uid, email: email)
+        self.userShipments = found
+    }
+
+    public func openShipmentDetail(_ shipment: SocialVipleDeliveryTrackResponse) {
+        self.activeTrackingResult = shipment
+        self.isShowingVipleDeliverySheet = true
+    }
+
+    public func trackParcelInApp(code rawCode: String) async {
+        let clean = rawCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else {
+            showToast("Saisissez un code Viple Delivery, N° de commande ou UPS.")
+            return
+        }
+        isTrackingLoading = true
+        let uid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        if let remote = await LivriaSocialAPIClient.shared.trackVipleDelivery(code: clean, userId: uid) {
+            self.activeTrackingResult = remote
+            self.isTrackingLoading = false
+            self.isShowingVipleDeliverySheet = true
+        } else {
+            self.isTrackingLoading = false
+            showToast("Aucun colis trouvé pour la référence « \(clean) ».")
+        }
+    }
+
+    // MARK: - Réglages Avancés, Export RGPD, Cache & Diagnostics
+
+    public func saveAndSyncPreferences(_ newPrefs: SocialUserPreferences) {
+        self.userPreferences = newPrefs
+        if let encoded = try? JSONEncoder().encode(newPrefs) {
+            defaults.set(encoded, forKey: "livria.social.ios.prefs.v1")
+        }
+        let uid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        let email = currentUser?.email ?? defaults.string(forKey: savedEmailKey) ?? ""
+        Task {
+            _ = await LivriaSocialAPIClient.shared.saveUserPreferences(userId: uid, email: email, prefs: newPrefs)
+        }
+        triggerHapticFeedback()
+        showToast("Préférences Livria Social enregistrées et synchronisées")
+    }
+
+    public func clearLocalCache() {
+        URLCache.shared.removeAllCachedResponses()
+        triggerHapticFeedback()
+        showToast("Cache média Livria Social purgé")
+    }
+
+    public func runDiagnosticsCheck() async {
+        let (ping, ms) = await LivriaSocialAPIClient.shared.pingDiagnostics()
+        self.lastDiagnosticsPing = ping
+        self.lastPingLatencyMs = ms
+        showToast("Serveur Livria Social opérationnel (\(ms) ms • Sécurité non-bloquante)")
+    }
+
+    public func requestPrivacyExport() async {
+        let uid = currentUser?.id ?? defaults.integer(forKey: savedUserIdKey)
+        let email = currentUser?.email ?? defaults.string(forKey: savedEmailKey) ?? ""
+        if let exported = await LivriaSocialAPIClient.shared.exportPrivacyData(userId: uid, email: email) {
+            self.privacyExportJSON = exported
+            showToast("Export RGPD généré avec succès")
+        } else {
+            let fallback: [String: Any] = [
+                "exportedAtUtc": ISO8601DateFormatter().string(from: Date()),
+                "app": "Livria Social iOS",
+                "user": currentUser?.displayName ?? "",
+                "email": email,
+                "bookmarksCount": bookmarkedPostIds.count
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: fallback, options: [.prettyPrinted]),
+               let str = String(data: data, encoding: .utf8) {
+                self.privacyExportJSON = str
+            }
+            showToast("Export RGPD prêt")
+        }
+    }
+
+    public func triggerHapticFeedback() {
+        guard userPreferences.hapticFeedbackEnabled else { return }
+        #if canImport(UIKit)
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+        #endif
     }
 }

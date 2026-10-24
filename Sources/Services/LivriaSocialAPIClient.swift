@@ -26,6 +26,11 @@ public final class LivriaSocialAPIClient {
 
     private func applyVipleDeviceHeaders(to req: inout URLRequest) {
         req.setValue("Livria Social", forHTTPHeaderField: "X-Viple-App-Name")
+        req.setValue("26.10", forHTTPHeaderField: "X-Viple-Client-Version")
+        req.setValue(UUID().uuidString, forHTTPHeaderField: "X-Viple-Request-Id")
+        if req.httpMethod == "POST" {
+            req.setValue(UUID().uuidString, forHTTPHeaderField: "X-Idempotency-Key")
+        }
         #if canImport(UIKit)
         if let vendorId = UIDevice.current.identifierForVendor?.uuidString, !vendorId.isEmpty {
             req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
@@ -354,5 +359,93 @@ public final class LivriaSocialAPIClient {
             }
         }
         return items
+    }
+
+    // MARK: - Suivi Colis Viple Delivery Intégré (Sans Ouvrir delivery.viplenetwork.com)
+
+    public func fetchUserShipments(userId: Int, email: String) async -> [SocialVipleDeliveryTrackResponse] {
+        var q: [URLQueryItem] = []
+        if userId > 0 {
+            q.append(URLQueryItem(name: "userId", value: String(userId)))
+        }
+        if !email.isEmpty {
+            q.append(URLQueryItem(name: "email", value: email))
+        }
+        if let res: SocialUserShipmentsResponse = try? await getJSON("\(storeBaseAPI)/delivery/user-shipments", queryItems: q) {
+            return res.shipments
+        }
+        return []
+    }
+
+    public func trackVipleDelivery(code: String, userId: Int) async -> SocialVipleDeliveryTrackResponse? {
+        let clean = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        let q: [URLQueryItem] = [
+            URLQueryItem(name: "code", value: clean),
+            URLQueryItem(name: "orderId", value: clean),
+            URLQueryItem(name: "userId", value: String(userId))
+        ]
+        return try? await getJSON("\(storeBaseAPI)/delivery/track", queryItems: q)
+    }
+
+    // MARK: - Signalement Modération, Réglages Synchronisés, Export RGPD & Diagnostics
+
+    public func reportPost(postId: Int, userId: Int, email: String, reason: String, details: String) async -> Bool {
+        let res = try? await postRaw("/posts/report", body: [
+            "postId": postId,
+            "userId": userId,
+            "email": email,
+            "reason": reason,
+            "details": details
+        ])
+        return (res?["ok"] as? Bool) ?? true
+    }
+
+    public func saveUserPreferences(userId: Int, email: String, prefs: SocialUserPreferences) async -> Bool {
+        let dict: [String: Any] = [
+            "userId": userId,
+            "email": email,
+            "app": "social",
+            "preferences": [
+                "notificationsLikesAndComments": prefs.notificationsLikesAndComments,
+                "notificationsMessages": prefs.notificationsMessages,
+                "notificationsListSales": prefs.notificationsListSales,
+                "notificationsVipleDelivery": prefs.notificationsVipleDelivery,
+                "spoilerProtectionEnabled": prefs.spoilerProtectionEnabled,
+                "hapticFeedbackEnabled": prefs.hapticFeedbackEnabled,
+                "dataSaverMedia": prefs.dataSaverMedia,
+                "hideOnlinePresence": prefs.hideOnlinePresence
+            ]
+        ]
+        let res = try? await postRaw("/account/preferences", body: dict)
+        return (res?["ok"] as? Bool) ?? true
+    }
+
+    public func exportPrivacyData(userId: Int, email: String) async -> String? {
+        var components = URLComponents(string: "\(baseAPI)/account/privacy-export")!
+        components.queryItems = [
+            URLQueryItem(name: "userId", value: String(userId)),
+            URLQueryItem(name: "email", value: email)
+        ]
+        guard let url = components.url else { return nil }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = 15
+        applyVipleDeviceHeaders(to: &req)
+        guard let (data, http) = try? await performRequest(req),
+              (200...299).contains(http.statusCode),
+              let jsonObj = try? JSONSerialization.jsonObject(with: data),
+              let prettyData = try? JSONSerialization.data(withJSONObject: jsonObj, options: [.prettyPrinted, .sortedKeys]),
+              let str = String(data: prettyData, encoding: .utf8) else {
+            return nil
+        }
+        return str
+    }
+
+    public func pingDiagnostics() async -> (ping: SocialDiagnosticsPingResponse?, latencyMs: Int) {
+        let start = Date()
+        let resp: SocialDiagnosticsPingResponse? = try? await getJSON("/diagnostics/ping")
+        let ms = max(1, Int(Date().timeIntervalSince(start) * 1000))
+        return (resp, ms)
     }
 }

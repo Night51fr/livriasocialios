@@ -1,5 +1,8 @@
 import SwiftUI
 import AVKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Onglet 5 : Mon Profil & Studio de Personnalisation Complète (Arrière-plan, Couleurs, Opacité & Viple Live ID)
 
@@ -21,6 +24,8 @@ public struct SocialProfileView: View {
     @State private var didLoadInitialForm: Bool = false
     @State private var showingDeleteAccountConfirmation: Bool = false
     @State private var myMarketplaceListings: [SocialMarketplaceListingItem] = []
+    @State private var isShowingAdvancedSettings: Bool = false
+    @State private var manualTrackingCode: String = ""
 
     private let accentChoices = ["#8b5cf6", "#ec4899", "#06b6d4", "#f59e0b", "#10b981", "#ef4444"]
 
@@ -36,6 +41,8 @@ public struct SocialProfileView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     profileHeaderCard
+
+                    vipleDeliveryShipmentsCard
 
                     if !myMarketplaceListings.isEmpty {
                         myMarketplaceListingsSectionCard
@@ -60,7 +67,20 @@ public struct SocialProfileView: View {
             .navigationBarTitleDisplayMode(.inline)
             .onAppear {
                 syncFormWithUser()
-                Task { await loadMyMarketplaceListings() }
+                Task {
+                    await loadMyMarketplaceListings()
+                    await social.loadUserShipments()
+                }
+            }
+            .sheet(isPresented: $isShowingAdvancedSettings) {
+                SocialAdvancedSettingsSheet()
+                    .environmentObject(social)
+            }
+            .sheet(isPresented: $social.isShowingVipleDeliverySheet) {
+                if let tracking = social.activeTrackingResult {
+                    SocialVipleDeliveryTrackingSheet(tracking: tracking)
+                        .environmentObject(social)
+                }
             }
             .onChange(of: social.currentUser?.id) { _, _ in
                 syncFormWithUser()
@@ -222,6 +242,99 @@ public struct SocialProfileView: View {
         )
     }
 
+    // MARK: - Suivi Colis Viple Delivery Intégré (Sans Ouvrir le Site Externe)
+
+    private var vipleDeliveryShipmentsCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Label("SUIVI COLIS VIPLE DELIVERY INTÉGRÉ", systemImage: "shippingbox.and.arrow.backward.fill")
+                    .font(.system(size: 11.5, weight: .black, design: .rounded))
+                    .foregroundStyle(LivriaSocialPalette.gold)
+                Spacer()
+                Text("Sans navigateur")
+                    .font(.system(size: 10, weight: .black))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(LivriaSocialPalette.primary.opacity(0.28)))
+                    .foregroundStyle(.white)
+            }
+
+            Text("Suivez vos commandes Livria Store & Marketplace ou saisissez un code-barres Viple Delivery / UPS directement dans l'application.")
+                .font(.system(size: 12))
+                .foregroundStyle(LivriaSocialPalette.textMuted)
+
+            HStack(spacing: 8) {
+                TextField("Code Viple Delivery, N° commande ou UPS...", text: $manualTrackingCode)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
+                    .foregroundStyle(.white)
+
+                Button {
+                    Task {
+                        await social.trackParcelInApp(code: manualTrackingCode)
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        if social.isTrackingLoading {
+                            ProgressView().tint(.white).scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "location.magnifyingglass")
+                        }
+                        Text("Suivre")
+                            .font(.system(size: 12, weight: .black, design: .rounded))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(LivriaSocialPalette.primary))
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+            }
+
+            if !social.userShipments.isEmpty {
+                VStack(spacing: 8) {
+                    ForEach(social.userShipments.prefix(3)) { shipment in
+                        Button {
+                            social.openShipmentDetail(shipment)
+                        } label: {
+                            HStack(spacing: 10) {
+                                Image(systemName: "truck.box.badge.clock.fill")
+                                    .font(.system(size: 16, weight: .bold))
+                                    .foregroundStyle(LivriaSocialPalette.gold)
+                                    .frame(width: 34, height: 34)
+                                    .background(Circle().fill(Color.white.opacity(0.08)))
+
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("\(shipment.orderReference) • \(shipment.vipleDeliveryTrackingCode)")
+                                        .font(.system(size: 12.5, weight: .bold, design: .monospaced))
+                                        .foregroundStyle(.white)
+                                    Text(shipment.currentStatus)
+                                        .font(.system(size: 11))
+                                        .foregroundStyle(LivriaSocialPalette.emerald)
+                                }
+                                Spacer()
+                                Text("\(shipment.progressPercent)%")
+                                    .font(.system(size: 11.5, weight: .black, design: .monospaced))
+                                    .foregroundStyle(LivriaSocialPalette.gold)
+                                Image(systemName: "chevron.right")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(LivriaSocialPalette.textMuted)
+                            }
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+        }
+        .padding(15)
+        .socialCard(opacity: cardOpacity / 100.0)
+    }
+
     // MARK: - Mes Annonces Publiées sur Livria Marketplace
 
     private var myMarketplaceListingsSectionCard: some View {
@@ -364,6 +477,25 @@ public struct SocialProfileView: View {
             Divider()
                 .background(Color.white.opacity(0.12))
                 .padding(.vertical, 4)
+
+            Button {
+                isShowingAdvancedSettings = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "slider.horizontal.3")
+                        .foregroundStyle(LivriaSocialPalette.accent)
+                    Text("Réglages Avancés, Anti-Spoiler, Export RGPD & Diagnostics")
+                        .font(.system(size: 12.5, weight: .bold))
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                }
+                .padding(11)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.06)))
+            }
+            .buttonStyle(.plain)
 
             Button {
                 social.isShowingTermsReviewSheet = true
@@ -1386,6 +1518,247 @@ public struct SocialAuthSheetView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Fermer") { dismiss() }
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Feuille Native de Suivi Colis Viple Delivery (Sans Ouvrir delivery.viplenetwork.com)
+
+public struct SocialVipleDeliveryTrackingSheet: View {
+    @EnvironmentObject private var social: LivriaSocialViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    public let tracking: SocialVipleDeliveryTrackResponse
+
+    public init(tracking: SocialVipleDeliveryTrackResponse) {
+        self.tracking = tracking
+    }
+
+    public var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text("VIPLE DELIVERY • SUIVI EN DIRECT")
+                                .font(.system(size: 10.5, weight: .black, design: .rounded))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(Capsule().fill(Color.white.opacity(0.2)))
+                                .foregroundStyle(.white)
+                            Spacer()
+                            Text("\(tracking.progressPercent)%")
+                                .font(.system(size: 14, weight: .black, design: .monospaced))
+                                .foregroundStyle(LivriaSocialPalette.gold)
+                        }
+
+                        Text(tracking.currentStatus)
+                            .font(.system(size: 19, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+
+                        Text(tracking.estimatedDeliveryText)
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.white.opacity(0.2)).frame(height: 8)
+                                Capsule()
+                                    .fill(LivriaSocialPalette.goldGradient)
+                                    .frame(width: max(24, geo.size.width * CGFloat(min(max(tracking.progressPercent, 8), 100)) / 100.0), height: 8)
+                            }
+                        }
+                        .frame(height: 8)
+                    }
+                    .padding(16)
+                    .background(RoundedRectangle(cornerRadius: 20).fill(LivriaSocialPalette.brandGradient))
+
+                    // Code-barres Viple Delivery / Scan Looby Taker
+                    VStack(spacing: 10) {
+                        HStack {
+                            Label("Étiquette Viple Delivery (Looby Taker)", systemImage: "barcode.viewfinder")
+                                .font(.system(size: 13, weight: .black, design: .rounded))
+                                .foregroundStyle(LivriaSocialPalette.gold)
+                            Spacer()
+                            Button {
+                                #if canImport(UIKit)
+                                UIPasteboard.general.string = tracking.vipleDeliveryTrackingCode
+                                #endif
+                                social.showToast("Code Viple Delivery copié")
+                            } label: {
+                                Label("Copier", systemImage: "doc.on.doc")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(LivriaSocialPalette.accent)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        HStack(spacing: 2) {
+                            ForEach(Array(tracking.vipleDeliveryTrackingCode.utf8.enumerated()), id: \.offset) { idx, byte in
+                                Rectangle()
+                                    .fill(Color.black)
+                                    .frame(width: CGFloat((Int(byte) + idx) % 3 + 1) * 1.6, height: 42)
+                                Rectangle()
+                                    .fill(Color.clear)
+                                    .frame(width: CGFloat(idx % 2 + 1), height: 42)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 12)
+                        .frame(maxWidth: .infinity)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white))
+
+                        Text(tracking.vipleDeliveryTrackingCode)
+                            .font(.system(size: 13.5, weight: .black, design: .monospaced))
+                            .foregroundStyle(.white)
+                    }
+                    .padding(14)
+                    .socialCard()
+
+                    // Jalons de suivi
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Progression de la livraison")
+                            .font(.system(size: 14.5, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+
+                        ForEach(tracking.steps) { step in
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: step.isCompleted ? "checkmark.circle.fill" : (step.isCurrent ? "truck.box.fill" : "circle"))
+                                    .foregroundStyle(step.isCompleted ? LivriaSocialPalette.emerald : (step.isCurrent ? LivriaSocialPalette.gold : LivriaSocialPalette.textMuted))
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(step.title)
+                                        .font(.system(size: 13, weight: .bold))
+                                        .foregroundStyle(.white)
+                                    Text(step.subtitle)
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                                }
+                                Spacer()
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .socialCard()
+                }
+                .padding(16)
+            }
+            .background(LivriaSocialPalette.background.ignoresSafeArea())
+            .navigationTitle("Suivi Viple Delivery")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Fermer") { dismiss() }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Centre de Réglages Avancés, Anti-Spoiler, Export RGPD, Cache & Diagnostics
+
+public struct SocialAdvancedSettingsSheet: View {
+    @EnvironmentObject private var social: LivriaSocialViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var localPrefs: SocialUserPreferences = SocialUserPreferences()
+
+    public init() {}
+
+    public var body: some View {
+        NavigationStack {
+            Form {
+                Section("Notifications & Alertes Communauté") {
+                    Toggle("J'aime, réactions et commentaires", isOn: $localPrefs.notificationsLikesAndComments)
+                    Toggle("Messages privés et notes vocales", isOn: $localPrefs.notificationsMessages)
+                    Toggle("Commissions sur mes listes rémunérées (€)", isOn: $localPrefs.notificationsListSales)
+                    Toggle("Suivi de mes colis Viple Delivery", isOn: $localPrefs.notificationsVipleDelivery)
+                }
+
+                Section("Confort de lecture & Confidentialité") {
+                    Toggle("Protection anti-spoiler automatique ([spoiler])", isOn: $localPrefs.spoilerProtectionEnabled)
+                    Toggle("Retour haptique sur les réactions et signets", isOn: $localPrefs.hapticFeedbackEnabled)
+                    Toggle("Mode Économie de données (photos/vidéos)", isOn: $localPrefs.dataSaverMedia)
+                    Toggle("Masquer ma présence en ligne", isOn: $localPrefs.hideOnlinePresence)
+
+                    Button {
+                        social.saveAndSyncPreferences(localPrefs)
+                    } label: {
+                        Label("Enregistrer et synchroniser mes réglages", systemImage: "checkmark.seal.fill")
+                            .font(.system(size: 13.5, weight: .bold))
+                    }
+                }
+
+                Section("Stockage Local & Export RGPD") {
+                    Button {
+                        social.clearLocalCache()
+                    } label: {
+                        Label("Vider le cache média de l'application", systemImage: "trash.slash.fill")
+                    }
+
+                    Button {
+                        Task {
+                            await social.requestPrivacyExport()
+                        }
+                    } label: {
+                        Label("Générer mon export RGPD (JSON)", systemImage: "square.and.arrow.down")
+                    }
+
+                    if let exported = social.privacyExportJSON {
+                        VStack(alignment: .leading, spacing: 6) {
+                            HStack {
+                                Text("Export RGPD généré")
+                                    .font(.caption.bold())
+                                Spacer()
+                                Button("Copier") {
+                                    #if canImport(UIKit)
+                                    UIPasteboard.general.string = exported
+                                    #endif
+                                    social.showToast("Export RGPD copié")
+                                }
+                                .font(.caption.bold())
+                            }
+                            Text(exported)
+                                .font(.system(size: 10, design: .monospaced))
+                                .lineLimit(8)
+                        }
+                    }
+                }
+
+                Section("Diagnostic Serveur & Sécurité Non-Bloquante") {
+                    HStack {
+                        Text("Politique anti-blocage IP")
+                        Spacer()
+                        Text("Active (0 blocage)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.green)
+                    }
+                    if social.lastPingLatencyMs > 0 {
+                        HStack {
+                            Text("Latence API Livria Social")
+                            Spacer()
+                            Text("\(social.lastPingLatencyMs) ms")
+                                .font(.caption.monospaced().bold())
+                        }
+                    }
+                    Button {
+                        Task {
+                            await social.runDiagnosticsCheck()
+                        }
+                    } label: {
+                        Label("Tester la connexion au serveur Livria Social", systemImage: "bolt.horizontal.circle.fill")
+                    }
+                }
+            }
+            .navigationTitle("Réglages Avancés")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Fermer") { dismiss() }
+                }
+            }
+            .onAppear {
+                localPrefs = social.userPreferences
             }
         }
     }

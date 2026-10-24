@@ -712,3 +712,190 @@ public struct SocialWordScrambleItem: Identifiable, Equatable, Sendable {
         SocialWordScrambleItem(scrambled: "L E C T U R E", answer: "LECTURE", hint: "Activité favorite de la communauté Livria")
     ]
 }
+
+// MARK: - Suivi Colis Viple Delivery Intégré (Sans Ouvrir le Site Externe) & Réglages Avancés Livria Social
+
+public struct SocialVipleDeliveryStep: Identifiable, Codable, Equatable, Hashable, Sendable {
+    public var id: String { code }
+    public var code: String
+    public var title: String
+    public var subtitle: String
+    public var isCompleted: Bool
+    public var isCurrent: Bool
+    public var timestamp: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case code, title, subtitle, isCompleted, isCurrent, timestamp
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.code = (try? c.decode(String.self, forKey: .code)) ?? UUID().uuidString
+        self.title = (try? c.decode(String.self, forKey: .title)) ?? ""
+        self.subtitle = (try? c.decode(String.self, forKey: .subtitle)) ?? ""
+        self.isCompleted = (try? c.decode(Bool.self, forKey: .isCompleted)) ?? false
+        self.isCurrent = (try? c.decode(Bool.self, forKey: .isCurrent)) ?? false
+        self.timestamp = try? c.decode(String.self, forKey: .timestamp)
+    }
+
+    public init(code: String, title: String, subtitle: String, isCompleted: Bool, isCurrent: Bool, timestamp: String? = nil) {
+        self.code = code
+        self.title = title
+        self.subtitle = subtitle
+        self.isCompleted = isCompleted
+        self.isCurrent = isCurrent
+        self.timestamp = timestamp
+    }
+}
+
+public struct SocialVipleDeliveryEvent: Identifiable, Codable, Equatable, Hashable, Sendable {
+    public var id: String { "\(timestamp)-\(label)" }
+    public var timestamp: String
+    public var location: String
+    public var label: String
+    public var details: String
+    public var icon: String
+
+    private enum CodingKeys: String, CodingKey {
+        case timestamp, location, label, details, icon
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.timestamp = (try? c.decode(String.self, forKey: .timestamp)) ?? ""
+        self.location = (try? c.decode(String.self, forKey: .location)) ?? "Hub Viple Delivery"
+        self.label = (try? c.decode(String.self, forKey: .label)) ?? ""
+        self.details = (try? c.decode(String.self, forKey: .details)) ?? ""
+        self.icon = (try? c.decode(String.self, forKey: .icon)) ?? "shippingbox.fill"
+    }
+
+    public init(timestamp: String, location: String, label: String, details: String, icon: String = "shippingbox.fill") {
+        self.timestamp = timestamp
+        self.location = location
+        self.label = label
+        self.details = details
+        self.icon = icon
+    }
+}
+
+public struct SocialVipleDeliveryTrackResponse: Identifiable, Codable, Equatable, Hashable, Sendable {
+    public var id: String { orderReference.isEmpty ? vipleDeliveryTrackingCode : orderReference }
+    public var ok: Bool
+    public var found: Bool
+    public var sourceType: String
+    public var orderReference: String
+    public var vipleDeliveryTrackingCode: String
+    public var upsTrackingNumber: String?
+    public var loobyTakerBarcode: String?
+    public var labelDownloadUrl: String?
+    public var carrierName: String
+    public var deliveryMode: String
+    public var currentStatus: String
+    public var progressPercent: Int
+    public var estimatedDeliveryText: String
+    public var recipientName: String
+    public var destinationAddress: String
+    public var takerRemunerationEur: Double
+    public var steps: [SocialVipleDeliveryStep]
+    public var events: [SocialVipleDeliveryEvent]
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, found, sourceType, orderReference, vipleDeliveryTrackingCode, upsTrackingNumber
+        case loobyTakerBarcode, labelDownloadUrl, carrierName, deliveryMode, currentStatus
+        case progressPercent, estimatedDeliveryText, recipientName, destinationAddress
+        case takerRemunerationEur, steps, events
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+        self.found = (try? c.decode(Bool.self, forKey: .found)) ?? true
+        self.sourceType = (try? c.decode(String.self, forKey: .sourceType)) ?? "store"
+        self.orderReference = (try? c.decode(String.self, forKey: .orderReference)) ?? ""
+        self.vipleDeliveryTrackingCode = (try? c.decode(String.self, forKey: .vipleDeliveryTrackingCode)) ?? ""
+        self.upsTrackingNumber = try? c.decode(String.self, forKey: .upsTrackingNumber)
+        self.loobyTakerBarcode = try? c.decode(String.self, forKey: .loobyTakerBarcode)
+        self.labelDownloadUrl = try? c.decode(String.self, forKey: .labelDownloadUrl)
+        self.carrierName = (try? c.decode(String.self, forKey: .carrierName)) ?? "Viple Delivery & UPS"
+        self.deliveryMode = (try? c.decode(String.self, forKey: .deliveryMode)) ?? "Point Relais Viple Taker"
+        self.currentStatus = (try? c.decode(String.self, forKey: .currentStatus)) ?? "En cours d'acheminement"
+        self.progressPercent = (try? c.decode(Int.self, forKey: .progressPercent)) ?? 68
+        self.estimatedDeliveryText = (try? c.decode(String.self, forKey: .estimatedDeliveryText)) ?? "Livraison estimée sous 24h à 48h (0,00 €)"
+        self.recipientName = (try? c.decode(String.self, forKey: .recipientName)) ?? "Membre Livria"
+        self.destinationAddress = (try? c.decode(String.self, forKey: .destinationAddress)) ?? "Point Relais Viple Taker"
+        self.takerRemunerationEur = (try? c.decode(Double.self, forKey: .takerRemunerationEur)) ?? 1.00
+        self.steps = (try? c.decode([SocialVipleDeliveryStep].self, forKey: .steps)) ?? []
+        self.events = (try? c.decode([SocialVipleDeliveryEvent].self, forKey: .events)) ?? []
+    }
+}
+
+public struct SocialUserShipmentsResponse: Codable, Sendable {
+    public var ok: Bool
+    public var count: Int?
+    public var shipments: [SocialVipleDeliveryTrackResponse]
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, count, shipments
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+        self.count = try? c.decode(Int.self, forKey: .count)
+        self.shipments = (try? c.decode([SocialVipleDeliveryTrackResponse].self, forKey: .shipments)) ?? []
+    }
+}
+
+public struct SocialUserPreferences: Codable, Equatable, Sendable {
+    public var notificationsLikesAndComments: Bool
+    public var notificationsMessages: Bool
+    public var notificationsListSales: Bool
+    public var notificationsVipleDelivery: Bool
+    public var spoilerProtectionEnabled: Bool
+    public var hapticFeedbackEnabled: Bool
+    public var dataSaverMedia: Bool
+    public var hideOnlinePresence: Bool
+
+    public init(
+        notificationsLikesAndComments: Bool = true,
+        notificationsMessages: Bool = true,
+        notificationsListSales: Bool = true,
+        notificationsVipleDelivery: Bool = true,
+        spoilerProtectionEnabled: Bool = true,
+        hapticFeedbackEnabled: Bool = true,
+        dataSaverMedia: Bool = false,
+        hideOnlinePresence: Bool = false
+    ) {
+        self.notificationsLikesAndComments = notificationsLikesAndComments
+        self.notificationsMessages = notificationsMessages
+        self.notificationsListSales = notificationsListSales
+        self.notificationsVipleDelivery = notificationsVipleDelivery
+        self.spoilerProtectionEnabled = spoilerProtectionEnabled
+        self.hapticFeedbackEnabled = hapticFeedbackEnabled
+        self.dataSaverMedia = dataSaverMedia
+        self.hideOnlinePresence = hideOnlinePresence
+    }
+}
+
+public struct SocialDiagnosticsPingResponse: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var service: String
+    public var status: String
+    public var serverTimeUtc: String
+    public var nonBlockingSecurity: Bool
+    public var ipRateLimitingEnabled: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, service, status, serverTimeUtc, nonBlockingSecurity, ipRateLimitingEnabled
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+        self.service = (try? c.decode(String.self, forKey: .service)) ?? "Livria Social Mobile API"
+        self.status = (try? c.decode(String.self, forKey: .status)) ?? "operational"
+        self.serverTimeUtc = (try? c.decode(String.self, forKey: .serverTimeUtc)) ?? ""
+        self.nonBlockingSecurity = (try? c.decode(Bool.self, forKey: .nonBlockingSecurity)) ?? true
+        self.ipRateLimitingEnabled = (try? c.decode(Bool.self, forKey: .ipRateLimitingEnabled)) ?? false
+    }
+}

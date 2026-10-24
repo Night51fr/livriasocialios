@@ -1,5 +1,8 @@
 import SwiftUI
 import PassKit
+#if canImport(UIKit)
+import UIKit
+#endif
 
 // MARK: - Checkout Complet Livria Marketplace (Apple Pay, PayPal, API UPS & Points Relais Viple Taker • 1€ Garantie • 0€ Port)
 
@@ -446,6 +449,23 @@ public struct MarketplaceCheckoutSheetView: View {
             }
 
             Button {
+                Task {
+                    await store.trackOrderInApp(order)
+                }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "truck.box.badge.clock.fill")
+                    Text("Suivre mon colis Viple Delivery dans l'application")
+                }
+                .font(.system(size: 14, weight: .black, design: .rounded))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 13)
+                .background(RoundedRectangle(cornerRadius: 14).fill(MarketplacePalette.primarySoft))
+                .foregroundStyle(MarketplacePalette.primary)
+            }
+            .buttonStyle(.plain)
+
+            Button {
                 dismiss()
             } label: {
                 Text("Retourner sur Livria Marketplace")
@@ -458,6 +478,12 @@ public struct MarketplaceCheckoutSheetView: View {
             }
         }
         .marketplaceCard()
+        .sheet(isPresented: $store.isShowingVipleDeliverySheet) {
+            if let tracking = store.activeTrackingResult {
+                MarketplaceVipleDeliveryTrackingSheet(tracking: tracking)
+                    .environmentObject(store)
+            }
+        }
     }
 
     private func finalizeOrder(using method: String) async {
@@ -542,16 +568,64 @@ public struct MarketplacePayPalCheckoutWebModal: View {
     }
 }
 
-// MARK: - Historique & Suivi des Commandes Marketplace
+// MARK: - Historique & Suivi des Commandes Marketplace (Avec Suivi Viple Delivery Natif Intégré)
 
 public struct MarketplaceOrdersHistorySheet: View {
     @EnvironmentObject private var store: LivriaMarketplaceViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var manualTrackingInput: String = ""
+
+    public init() {}
 
     public var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
+                    // Recherche directe Viple Delivery / Looby Taker / UPS sans ouvrir Safari
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "barcode.viewfinder")
+                                .font(.system(size: 16, weight: .bold))
+                                .foregroundStyle(MarketplacePalette.primary)
+                            Text("Suivi Viple Delivery & Looby Taker intégré")
+                                .font(.system(size: 15, weight: .black, design: .rounded))
+                                .foregroundStyle(MarketplacePalette.ink)
+                        }
+                        Text("Suivez n'importe quel colis Livria Marketplace, étiquette Viple Delivery ou numéro UPS en direct sans quitter l'application.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(MarketplacePalette.inkMuted)
+
+                        HStack(spacing: 8) {
+                            TextField("Ex: VD-LVR-..., 1Z999..., LVR-MKT-...", text: $manualTrackingInput)
+                                .textInputAutocapitalization(.characters)
+                                .autocorrectionDisabled()
+                                .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                                .padding(10)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(MarketplacePalette.background))
+                            Button {
+                                Task {
+                                    await store.trackParcelByCodeInApp(manualTrackingInput)
+                                }
+                            } label: {
+                                HStack(spacing: 5) {
+                                    if store.isTrackingLoading {
+                                        ProgressView().tint(.white).scaleEffect(0.8)
+                                    } else {
+                                        Image(systemName: "location.magnifyingglass")
+                                    }
+                                    Text("Suivre")
+                                        .font(.system(size: 12.5, weight: .black, design: .rounded))
+                                }
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 10)
+                                .background(RoundedRectangle(cornerRadius: 10).fill(MarketplacePalette.primary))
+                                .foregroundStyle(.white)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .marketplaceCard()
+
                     if store.orders.isEmpty {
                         VStack(spacing: 12) {
                             Image(systemName: "shippingbox")
@@ -559,7 +633,7 @@ public struct MarketplaceOrdersHistorySheet: View {
                                 .foregroundStyle(MarketplacePalette.primary)
                             Text("Aucune commande pour le moment")
                                 .font(.system(size: 16, weight: .black, design: .rounded))
-                            Text("Vos achats sur Livria Marketplace (avec suivi UPS & code-barres Viple Delivery / Looby Taker) apparaîtront ici.")
+                            Text("Vos achats sur Livria Marketplace (avec suivi UPS & code-barres Viple Delivery / Looby Taker intégré) apparaîtront ici.")
                                 .font(.system(size: 12.5))
                                 .foregroundStyle(MarketplacePalette.inkMuted)
                                 .multilineTextAlignment(.center)
@@ -570,9 +644,22 @@ public struct MarketplaceOrdersHistorySheet: View {
                         ForEach(store.orders) { order in
                             VStack(alignment: .leading, spacing: 10) {
                                 HStack {
-                                    Text(order.orderNumber)
-                                        .font(.system(size: 14, weight: .black, design: .rounded))
+                                    Button {
+                                        #if canImport(UIKit)
+                                        UIPasteboard.general.string = order.orderNumber
+                                        #endif
+                                        store.showToast("Référence \(order.orderNumber) copiée")
+                                    } label: {
+                                        HStack(spacing: 4) {
+                                            Text(order.orderNumber)
+                                                .font(.system(size: 14, weight: .black, design: .rounded))
+                                            Image(systemName: "doc.on.doc")
+                                                .font(.system(size: 10, weight: .bold))
+                                        }
                                         .foregroundStyle(MarketplacePalette.primary)
+                                    }
+                                    .buttonStyle(.plain)
+
                                     Spacer()
                                     Text(order.createdAtDisplay)
                                         .font(.caption)
@@ -589,14 +676,83 @@ public struct MarketplaceOrdersHistorySheet: View {
 
                                 Divider()
 
-                                Text("Suivi UPS : \(order.upsTrackingNumber)")
-                                    .font(.caption.monospaced().bold())
-                                Text("Étiquette Viple Delivery (Looby Taker) : \(order.vipleDeliveryBarcode)")
-                                    .font(.caption.monospaced().bold())
-                                    .foregroundStyle(MarketplacePalette.primary)
+                                HStack {
+                                    Text("Suivi UPS : \(order.upsTrackingNumber)")
+                                        .font(.caption.monospaced().bold())
+                                    Spacer()
+                                    Button {
+                                        #if canImport(UIKit)
+                                        UIPasteboard.general.string = order.upsTrackingNumber
+                                        #endif
+                                        store.showToast("Numéro UPS copié")
+                                    } label: {
+                                        Image(systemName: "doc.on.doc")
+                                            .font(.caption)
+                                            .foregroundStyle(MarketplacePalette.inkMuted)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                HStack {
+                                    Text("Étiquette Viple Delivery : \(order.vipleDeliveryBarcode)")
+                                        .font(.caption.monospaced().bold())
+                                        .foregroundStyle(MarketplacePalette.primary)
+                                    Spacer()
+                                    Button {
+                                        #if canImport(UIKit)
+                                        UIPasteboard.general.string = order.vipleDeliveryBarcode
+                                        #endif
+                                        store.showToast("Code-barres Viple Delivery copié")
+                                    } label: {
+                                        Image(systemName: "doc.on.doc")
+                                            .font(.caption)
+                                            .foregroundStyle(MarketplacePalette.primary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
                                 Text(order.status)
                                     .font(.system(size: 12, weight: .bold))
                                     .foregroundStyle(MarketplacePalette.ink)
+
+                                HStack(spacing: 8) {
+                                    Button {
+                                        Task {
+                                            await store.trackOrderInApp(order)
+                                        }
+                                    } label: {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "truck.box.badge.clock.fill")
+                                            Text("Suivi Viple Delivery en direct")
+                                        }
+                                        .font(.system(size: 12.5, weight: .black, design: .rounded))
+                                        .frame(maxWidth: .infinity)
+                                        .padding(.vertical, 10)
+                                        .background(RoundedRectangle(cornerRadius: 11).fill(MarketplacePalette.primary))
+                                        .foregroundStyle(.white)
+                                    }
+                                    .buttonStyle(.plain)
+
+                                    if !order.status.localizedCaseInsensitiveContains("confirmée") {
+                                        Button {
+                                            Task {
+                                                await store.confirmOrderReceipt(order.orderNumber)
+                                            }
+                                        } label: {
+                                            HStack(spacing: 5) {
+                                                Image(systemName: "checkmark.seal.fill")
+                                                Text("Colis reçu")
+                                            }
+                                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                                            .padding(.horizontal, 12)
+                                            .padding(.vertical, 10)
+                                            .background(RoundedRectangle(cornerRadius: 11).fill(MarketplacePalette.green.opacity(0.16)))
+                                            .foregroundStyle(MarketplacePalette.green)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                                .padding(.top, 4)
                             }
                             .marketplaceCard()
                         }
@@ -605,7 +761,263 @@ public struct MarketplaceOrdersHistorySheet: View {
                 .padding(16)
             }
             .background(MarketplacePalette.background.ignoresSafeArea())
-            .navigationTitle("Mes Commandes Marketplace")
+            .navigationTitle("Mes Commandes & Suivi")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Fermer") { dismiss() }
+                }
+            }
+            .sheet(isPresented: $store.isShowingVipleDeliverySheet) {
+                if let tracking = store.activeTrackingResult {
+                    MarketplaceVipleDeliveryTrackingSheet(tracking: tracking)
+                        .environmentObject(store)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Vue Native Complète de Suivi Viple Delivery (Sans Ouvrir delivery.viplenetwork.com)
+
+public struct MarketplaceVipleDeliveryTrackingSheet: View {
+    @EnvironmentObject private var store: LivriaMarketplaceViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    public let tracking: MarketplaceVipleDeliveryTrackResponse
+
+    public init(tracking: MarketplaceVipleDeliveryTrackResponse) {
+        self.tracking = tracking
+    }
+
+    public var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    // En-tête Statut Temps Réel & Progression
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            HStack(spacing: 6) {
+                                Image(systemName: "shippingbox.and.arrow.backward.fill")
+                                Text("VIPLE DELIVERY • SUIVI NATIF")
+                                    .font(.system(size: 10.5, weight: .black, design: .rounded))
+                            }
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(Capsule().fill(.white.opacity(0.2)))
+                            .foregroundStyle(.white)
+
+                            Spacer()
+
+                            Text("\(tracking.progressPercent)%")
+                                .font(.system(size: 14, weight: .black, design: .monospaced))
+                                .foregroundStyle(.white)
+                        }
+
+                        Text(tracking.currentStatus)
+                            .font(.system(size: 20, weight: .black, design: .rounded))
+                            .foregroundStyle(.white)
+
+                        Text(tracking.estimatedDeliveryText)
+                            .font(.system(size: 12.5, weight: .semibold))
+                            .foregroundStyle(.white.opacity(0.9))
+
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                Capsule()
+                                    .fill(.white.opacity(0.24))
+                                    .frame(height: 8)
+                                Capsule()
+                                    .fill(.white)
+                                    .frame(width: max(24, geo.size.width * CGFloat(min(max(tracking.progressPercent, 8), 100)) / 100.0), height: 8)
+                            }
+                        }
+                        .frame(height: 8)
+                    }
+                    .padding(18)
+                    .background(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .fill(MarketplacePalette.heroGradient)
+                    )
+
+                    // Carte Code-barres Visuel Viple Delivery / Scan Looby Taker
+                    VStack(spacing: 10) {
+                        HStack {
+                            Label("Étiquette Viple Delivery (Scan Looby Taker)", systemImage: "barcode.viewfinder")
+                                .font(.system(size: 13.5, weight: .black, design: .rounded))
+                                .foregroundStyle(MarketplacePalette.primary)
+                            Spacer()
+                            Button {
+                                #if canImport(UIKit)
+                                UIPasteboard.general.string = tracking.vipleDeliveryTrackingCode
+                                #endif
+                                store.showToast("Code Viple Delivery copié")
+                            } label: {
+                                Label("Copier", systemImage: "doc.on.doc")
+                                    .font(.system(size: 11, weight: .bold))
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(MarketplacePalette.primarySoft))
+                                    .foregroundStyle(MarketplacePalette.primary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        // Représentation code-barres 1D haute lisibilité pour Looby Taker
+                        HStack(spacing: 2) {
+                            ForEach(Array(tracking.vipleDeliveryTrackingCode.utf8.enumerated()), id: \.offset) { idx, byte in
+                                Rectangle()
+                                    .fill(MarketplacePalette.ink)
+                                    .frame(width: CGFloat((Int(byte) + idx) % 3 + 1) * 1.6, height: 46)
+                                Rectangle()
+                                    .fill(Color.clear)
+                                    .frame(width: CGFloat(idx % 2 + 1), height: 46)
+                            }
+                        }
+                        .padding(.vertical, 6)
+                        .padding(.horizontal, 14)
+                        .frame(maxWidth: .infinity)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white))
+                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(MarketplacePalette.border, lineWidth: 1))
+
+                        Text(tracking.vipleDeliveryTrackingCode)
+                            .font(.system(size: 14, weight: .black, design: .monospaced))
+                            .foregroundStyle(MarketplacePalette.ink)
+
+                        if let ups = tracking.upsTrackingNumber, !ups.isEmpty {
+                            HStack {
+                                Text("N° Transporteur UPS :")
+                                    .font(.caption)
+                                    .foregroundStyle(MarketplacePalette.inkMuted)
+                                Spacer()
+                                Text(ups)
+                                    .font(.caption.monospaced().bold())
+                                    .foregroundStyle(MarketplacePalette.ink)
+                            }
+                        }
+
+                        HStack {
+                            Text("Destination / Point Relais :")
+                                .font(.caption)
+                                .foregroundStyle(MarketplacePalette.inkMuted)
+                            Spacer()
+                            Text(tracking.destinationAddress)
+                                .font(.caption.bold())
+                                .foregroundStyle(MarketplacePalette.ink)
+                                .multilineTextAlignment(.trailing)
+                        }
+                    }
+                    .marketplaceCard()
+
+                    // Étapes de livraison Viple Delivery (4 jalons)
+                    VStack(alignment: .leading, spacing: 14) {
+                        Text("Progression de l'acheminement")
+                            .font(.system(size: 15, weight: .black, design: .rounded))
+                            .foregroundStyle(MarketplacePalette.ink)
+
+                        ForEach(Array(tracking.steps.enumerated()), id: \.offset) { idx, step in
+                            HStack(alignment: .top, spacing: 12) {
+                                VStack(spacing: 0) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(step.isCompleted ? MarketplacePalette.green : (step.isCurrent ? MarketplacePalette.primary : MarketplacePalette.border))
+                                            .frame(width: 26, height: 26)
+                                        Image(systemName: step.isCompleted ? "checkmark" : (step.isCurrent ? "truck.box.fill" : "circle.fill"))
+                                            .font(.system(size: 11, weight: .bold))
+                                            .foregroundStyle(.white)
+                                    }
+                                    if idx < tracking.steps.count - 1 {
+                                        Rectangle()
+                                            .fill(step.isCompleted ? MarketplacePalette.green.opacity(0.5) : MarketplacePalette.border)
+                                            .frame(width: 2, height: 30)
+                                    }
+                                }
+
+                                VStack(alignment: .leading, spacing: 3) {
+                                    HStack {
+                                        Text(step.title)
+                                            .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                                            .foregroundStyle(MarketplacePalette.ink)
+                                        Spacer()
+                                        if let ts = step.timestamp, !ts.isEmpty {
+                                            Text(ts)
+                                                .font(.system(size: 10.5, weight: .semibold))
+                                                .foregroundStyle(MarketplacePalette.inkMuted)
+                                        }
+                                    }
+                                    Text(step.subtitle)
+                                        .font(.system(size: 11.5))
+                                        .foregroundStyle(MarketplacePalette.inkMuted)
+                                }
+                            }
+                        }
+                    }
+                    .marketplaceCard()
+
+                    // Journal des scans Looby Taker & Hub Viple Delivery
+                    if !tracking.events.isEmpty {
+                        VStack(alignment: .leading, spacing: 12) {
+                            Text("Historique des scans Viple Delivery & UPS")
+                                .font(.system(size: 15, weight: .black, design: .rounded))
+                                .foregroundStyle(MarketplacePalette.ink)
+
+                            ForEach(tracking.events) { ev in
+                                HStack(alignment: .top, spacing: 10) {
+                                    Image(systemName: ev.icon)
+                                        .font(.system(size: 14, weight: .bold))
+                                        .foregroundStyle(MarketplacePalette.primary)
+                                        .frame(width: 28, height: 28)
+                                        .background(Circle().fill(MarketplacePalette.primarySoft))
+
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        HStack {
+                                            Text(ev.label)
+                                                .font(.system(size: 13, weight: .bold))
+                                                .foregroundStyle(MarketplacePalette.ink)
+                                            Spacer()
+                                            Text(ev.timestamp)
+                                                .font(.system(size: 10.5, weight: .semibold))
+                                                .foregroundStyle(MarketplacePalette.inkMuted)
+                                        }
+                                        Text(ev.location)
+                                            .font(.system(size: 11, weight: .semibold))
+                                            .foregroundStyle(MarketplacePalette.primary)
+                                        Text(ev.details)
+                                            .font(.system(size: 11.5))
+                                            .foregroundStyle(MarketplacePalette.inkMuted)
+                                    }
+                                }
+                                .padding(10)
+                                .background(RoundedRectangle(cornerRadius: 12).fill(MarketplacePalette.background))
+                            }
+                        }
+                        .marketplaceCard()
+                    }
+
+                    // Bouton Confirmation de Bonne Réception (+25 XP)
+                    if tracking.progressPercent < 100 {
+                        Button {
+                            Task {
+                                await store.confirmOrderReceipt(tracking.orderReference)
+                            }
+                        } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.seal.fill")
+                                Text("Confirmer la bonne réception du colis (+25 XP)")
+                            }
+                            .font(.system(size: 14.5, weight: .black, design: .rounded))
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 15)
+                            .background(RoundedRectangle(cornerRadius: 14).fill(MarketplacePalette.green))
+                            .foregroundStyle(.white)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(16)
+            }
+            .background(MarketplacePalette.background.ignoresSafeArea())
+            .navigationTitle("Suivi Viple Delivery")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

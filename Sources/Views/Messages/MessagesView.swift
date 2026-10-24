@@ -10,9 +10,24 @@ import UIKit
 public struct MessagesView: View {
     @EnvironmentObject private var social: LivriaSocialViewModel
     @State private var memberSearchQuery: String = ""
+    @State private var showUnreadOnly: Bool = false
     @State private var activeRecipient: ConversationRecipientTarget? = nil
 
     public init() {}
+
+    private var filteredActiveConversations: [SocialConversationSummary] {
+        var list = social.conversations
+        if showUnreadOnly {
+            list = list.filter { $0.unreadCount > 0 }
+        }
+        let q = memberSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return list }
+        return list.filter {
+            $0.displayName.localizedCaseInsensitiveContains(q) ||
+            $0.handle.localizedCaseInsensitiveContains(q) ||
+            $0.lastMessagePreview.localizedCaseInsensitiveContains(q)
+        }
+    }
 
     public var body: some View {
         NavigationStack {
@@ -145,12 +160,26 @@ public struct MessagesView: View {
                                 .font(.system(size: 11, weight: .black, design: .rounded))
                                 .foregroundStyle(LivriaSocialPalette.textMuted)
                             Spacer()
-                            Text("\(social.conversations.count) fil(s)")
+                            Button {
+                                withAnimation(.spring(response: 0.25)) {
+                                    showUnreadOnly.toggle()
+                                }
+                            } label: {
+                                Text(showUnreadOnly ? "Non-lus ✓" : "Non-lus")
+                                    .font(.system(size: 10.5, weight: .bold, design: .rounded))
+                                    .padding(.horizontal, 9)
+                                    .padding(.vertical, 4)
+                                    .background(Capsule().fill(showUnreadOnly ? LivriaSocialPalette.primary : Color.white.opacity(0.08)))
+                                    .foregroundStyle(.white)
+                            }
+                            .buttonStyle(.plain)
+
+                            Text("\(filteredActiveConversations.count) fil(s)")
                                 .font(.system(size: 11, weight: .bold))
                                 .foregroundStyle(LivriaSocialPalette.accent)
                         }
 
-                        if social.conversations.isEmpty {
+                        if filteredActiveConversations.isEmpty {
                             VStack(spacing: 12) {
                                 Image(systemName: "bubble.left.and.exclamationmark.bubble.right.fill")
                                     .font(.system(size: 40))
@@ -166,7 +195,7 @@ public struct MessagesView: View {
                             .padding(.vertical, 24)
                             .frame(maxWidth: .infinity)
                         } else {
-                            ForEach(social.conversations) { conv in
+                            ForEach(filteredActiveConversations) { conv in
                                 Button {
                                     activeRecipient = ConversationRecipientTarget(
                                         id: conv.userId,
@@ -390,6 +419,31 @@ public struct ConversationThreadView: View {
                         .padding(9)
                         .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.08)))
                         .foregroundStyle(.white)
+                }
+
+                // Barre de réponses rapides littéraires 1-tap
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach([
+                            "Quel livre lis-tu en ce moment ? 📖",
+                            "Je te recommande vivement cette lecture ! ✨",
+                            "Merci pour le partage littéraire !",
+                            "As-tu vu ma dernière liste de lecture ?"
+                        ], id: \.self) { quickReply in
+                            Button {
+                                messageText = quickReply
+                                Task { await sendMessageNow() }
+                            } label: {
+                                Text(quickReply)
+                                    .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 5)
+                                    .background(Capsule().fill(Color.white.opacity(0.09)))
+                                    .foregroundStyle(LivriaSocialPalette.goldSoft)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                 }
 
                 HStack(spacing: 10) {

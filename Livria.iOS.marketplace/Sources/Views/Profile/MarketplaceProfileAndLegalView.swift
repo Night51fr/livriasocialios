@@ -16,6 +16,8 @@ public struct MarketplaceProfileView: View {
     @State private var isUploadingAvatar: Bool = false
     @State private var showingDeleteAccountAlert: Bool = false
     @State private var listingPendingDeletion: MarketplaceListing? = nil
+    @State private var isShowingAdvancedSettings: Bool = false
+    @State private var quickTrackCode: String = ""
 
     public init() {}
 
@@ -36,6 +38,7 @@ public struct MarketplaceProfileView: View {
                     VStack(alignment: .leading, spacing: 18) {
                         quickAccessEcosystemCard
                         authenticatedProfileHeaderCard
+                        vipleDeliveryDirectTrackingCard
                         myListingsManagementCard
                         settingsAndAppStoreComplianceCard
                     }
@@ -44,6 +47,16 @@ public struct MarketplaceProfileView: View {
                 .background(MarketplacePalette.background.ignoresSafeArea())
                 .navigationTitle("Mon Profil & Paramètres")
                 .navigationBarTitleDisplayMode(.inline)
+            }
+        }
+        .sheet(isPresented: $isShowingAdvancedSettings) {
+            MarketplaceAdvancedSettingsSheet()
+                .environmentObject(store)
+        }
+        .sheet(isPresented: $store.isShowingVipleDeliverySheet) {
+            if let tracking = store.activeTrackingResult {
+                MarketplaceVipleDeliveryTrackingSheet(tracking: tracking)
+                    .environmentObject(store)
             }
         }
         .onChange(of: selectedAvatarItem) { _, newItem in
@@ -392,6 +405,60 @@ public struct MarketplaceProfileView: View {
         .marketplaceCard()
     }
 
+    // MARK: - Suivi Colis Viple Delivery & Looby Taker Intégré (Sans Ouvrir le Site Externe)
+
+    private var vipleDeliveryDirectTrackingCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Suivi Viple Delivery & Looby Taker intégré", systemImage: "truck.box.badge.clock.fill")
+                    .font(.system(size: 15, weight: .black, design: .rounded))
+                    .foregroundStyle(MarketplacePalette.primary)
+                Spacer()
+                Text("Sans navigateur")
+                    .font(.system(size: 10, weight: .black, design: .rounded))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(MarketplacePalette.primarySoft))
+                    .foregroundStyle(MarketplacePalette.primary)
+            }
+
+            Text("Suivez vos colis Marketplace, étiquettes Viple Delivery (Looby Taker) ou numéros UPS directement dans l'application.")
+                .font(.system(size: 12))
+                .foregroundStyle(MarketplacePalette.inkMuted)
+
+            HStack(spacing: 8) {
+                TextField("Code Viple Delivery, N° commande ou UPS...", text: $quickTrackCode)
+                    .textInputAutocapitalization(.characters)
+                    .autocorrectionDisabled()
+                    .font(.system(size: 13, weight: .semibold, design: .monospaced))
+                    .padding(10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(MarketplacePalette.background))
+
+                Button {
+                    Task {
+                        await store.trackParcelByCodeInApp(quickTrackCode)
+                    }
+                } label: {
+                    HStack(spacing: 5) {
+                        if store.isTrackingLoading {
+                            ProgressView().tint(.white).scaleEffect(0.8)
+                        } else {
+                            Image(systemName: "location.magnifyingglass")
+                        }
+                        Text("Suivre")
+                            .font(.system(size: 12.5, weight: .black, design: .rounded))
+                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 10).fill(MarketplacePalette.primary))
+                    .foregroundStyle(.white)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .marketplaceCard()
+    }
+
     // MARK: - Paramètres, Relecture des CGU & Suppression de Compte (Obligatoire App Store)
 
     private var settingsAndAppStoreComplianceCard: some View {
@@ -405,8 +472,19 @@ public struct MarketplaceProfileView: View {
             } label: {
                 settingsRow(
                     icon: "shippingbox.fill",
-                    title: "Mes Commandes & Suivi UPS / Viple Taker",
-                    subtitle: "Consultez vos achats, numéros UPS et étiquettes Viple Delivery"
+                    title: "Mes Commandes & Suivi Viple Delivery intégré",
+                    subtitle: "Suivez vos colis en temps réel et confirmez leur bonne réception"
+                )
+            }
+            .buttonStyle(.plain)
+
+            Button {
+                isShowingAdvancedSettings = true
+            } label: {
+                settingsRow(
+                    icon: "slider.horizontal.3",
+                    title: "Réglages Avancés, Confidentialité RGPD & Diagnostics",
+                    subtitle: "Notifications, économie de données, export RGPD, cache et état serveur"
                 )
             }
             .buttonStyle(.plain)
@@ -879,6 +957,210 @@ public struct MarketplaceAuthSheetView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Fermer") { dismiss() }
                 }
+            }
+        }
+    }
+}
+
+// MARK: - Centre de Réglages Avancés, Export RGPD, Cache & Diagnostics Non-Bloquants
+
+public struct MarketplaceAdvancedSettingsSheet: View {
+    @EnvironmentObject private var store: LivriaMarketplaceViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    @State private var localPrefs: MarketplaceUserPreferences = MarketplaceUserPreferences()
+
+    public init() {}
+
+    public var body: some View {
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 16) {
+                    // 1. Notifications & Alertes
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Notifications & Alertes Marketplace", systemImage: "bell.badge.fill")
+                            .font(.system(size: 15, weight: .black, design: .rounded))
+                            .foregroundStyle(MarketplacePalette.primary)
+
+                        Toggle("Suivi d'expédition Viple Delivery & Looby Taker", isOn: $localPrefs.notificationsOrders)
+                            .font(.system(size: 13.5, weight: .semibold))
+                        Toggle("Offres de prix reçues et réponses vendeurs", isOn: $localPrefs.notificationsOffers)
+                            .font(.system(size: 13.5, weight: .semibold))
+                        Toggle("Nouveaux messages et notes vocales", isOn: $localPrefs.notificationsMessages)
+                            .font(.system(size: 13.5, weight: .semibold))
+                        Toggle("Baisses de prix sur mes favoris ❤️", isOn: $localPrefs.notificationsPriceDrops)
+                            .font(.system(size: 13.5, weight: .semibold))
+                    }
+                    .tint(MarketplacePalette.primary)
+                    .marketplaceCard()
+
+                    // 2. Expérience UI/UX & Livraison par Défaut
+                    VStack(alignment: .leading, spacing: 12) {
+                        Label("Affichage, Haptique & Livraison par défaut", systemImage: "sparkles")
+                            .font(.system(size: 15, weight: .black, design: .rounded))
+                            .foregroundStyle(MarketplacePalette.primary)
+
+                        Toggle("Retour haptique lors des actions (favoris, suivi)", isOn: $localPrefs.hapticFeedbackEnabled)
+                            .font(.system(size: 13.5, weight: .semibold))
+                        Toggle("Mode Économie de données sur les galeries photos", isOn: $localPrefs.dataSaverImages)
+                            .font(.system(size: 13.5, weight: .semibold))
+                        Toggle("Masquer mon statut en ligne dans la messagerie", isOn: $localPrefs.privacyHideOnlineStatus)
+                            .font(.system(size: 13.5, weight: .semibold))
+
+                        Divider()
+
+                        HStack {
+                            Text("Code postal Relais par défaut")
+                                .font(.system(size: 13, weight: .semibold))
+                            Spacer()
+                            TextField("54000", text: $localPrefs.defaultSearchPostalCode)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 90)
+                                .padding(7)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(MarketplacePalette.background))
+                        }
+
+                        HStack {
+                            Text("Ville Relais par défaut")
+                                .font(.system(size: 13, weight: .semibold))
+                            Spacer()
+                            TextField("Nancy", text: $localPrefs.defaultSearchCity)
+                                .multilineTextAlignment(.trailing)
+                                .frame(width: 140)
+                                .padding(7)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(MarketplacePalette.background))
+                        }
+
+                        Button {
+                            store.saveAndSyncPreferences(localPrefs)
+                        } label: {
+                            HStack {
+                                Image(systemName: "checkmark.circle.fill")
+                                Text("Enregistrer et synchroniser mes préférences")
+                                    .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(MarketplacePalette.heroGradient)
+                            .foregroundStyle(.white)
+                            .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                    }
+                    .tint(MarketplacePalette.primary)
+                    .marketplaceCard()
+
+                    // 3. Cache Local, Historiques & Export RGPD
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label("Confidentialité RGPD & Stockage Local", systemImage: "lock.shield.fill")
+                            .font(.system(size: 15, weight: .black, design: .rounded))
+                            .foregroundStyle(MarketplacePalette.primary)
+
+                        HStack(spacing: 10) {
+                            Button {
+                                store.clearLocalCache()
+                            } label: {
+                                Label("Vider le cache média", systemImage: "trash.slash.fill")
+                                    .font(.system(size: 12.5, weight: .bold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 11)
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(MarketplacePalette.background))
+                                    .foregroundStyle(MarketplacePalette.ink)
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                Task {
+                                    await store.requestPrivacyExport()
+                                }
+                            } label: {
+                                Label("Exporter mes données RGPD", systemImage: "square.and.arrow.down")
+                                    .font(.system(size: 12.5, weight: .bold))
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 11)
+                                    .background(RoundedRectangle(cornerRadius: 10).fill(MarketplacePalette.primarySoft))
+                                    .foregroundStyle(MarketplacePalette.primary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        if let exported = store.privacyExportJSON {
+                            VStack(alignment: .leading, spacing: 6) {
+                                HStack {
+                                    Text("Aperçu de votre export RGPD (JSON)")
+                                        .font(.caption.bold())
+                                    Spacer()
+                                    Button("Copier") {
+                                        #if canImport(UIKit)
+                                        UIPasteboard.general.string = exported
+                                        #endif
+                                        store.showToast("Export RGPD copié dans le presse-papiers")
+                                    }
+                                    .font(.caption.bold())
+                                    .foregroundStyle(MarketplacePalette.primary)
+                                }
+                                Text(exported)
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .lineLimit(8)
+                                    .padding(8)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .background(RoundedRectangle(cornerRadius: 8).fill(MarketplacePalette.background))
+                            }
+                        }
+                    }
+                    .marketplaceCard()
+
+                    // 4. Diagnostics Réseau & Sécurité Non-Bloquante
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Label("Diagnostic Réseau & Sécurité Non-Bloquante", systemImage: "waveform.path.ecg")
+                                .font(.system(size: 14.5, weight: .black, design: .rounded))
+                                .foregroundStyle(MarketplacePalette.primary)
+                            Spacer()
+                            if store.lastPingLatencyMs > 0 {
+                                Text("\(store.lastPingLatencyMs) ms")
+                                    .font(.caption.monospaced().bold())
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 3)
+                                    .background(Capsule().fill(MarketplacePalette.green.opacity(0.15)))
+                                    .foregroundStyle(MarketplacePalette.green)
+                            }
+                        }
+
+                        Text("Protection par en-têtes d'audit (X-Viple-Request-Id) et clés d'idempotence sans aucun blocage IP en cas de requêtes rapides.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(MarketplacePalette.inkMuted)
+
+                        Button {
+                            Task {
+                                await store.runDiagnosticsCheck()
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "bolt.horizontal.circle.fill")
+                                Text("Tester la latence API Livria & Viple Delivery")
+                                    .font(.system(size: 13, weight: .bold, design: .rounded))
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 11)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(MarketplacePalette.background))
+                            .foregroundStyle(MarketplacePalette.primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .marketplaceCard()
+                }
+                .padding(16)
+            }
+            .background(MarketplacePalette.background.ignoresSafeArea())
+            .navigationTitle("Réglages Avancés")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Fermer") { dismiss() }
+                }
+            }
+            .onAppear {
+                localPrefs = store.userPreferences
             }
         }
     }

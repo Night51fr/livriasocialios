@@ -41,6 +41,23 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
     @Published public var searchQuery: String = ""
     @Published public var sortOption: String = "Pertinence Livria"
     @Published public var showOnlyFavorites: Bool = false
+    @Published public var selectedConditionFilter: String = "Tous états"
+    @Published public var maxPriceCeiling: Double = 0
+
+    // Historique & Favoris Locaux Persistés (Zéro donnée de démo)
+    @Published public var recentlyViewedListingIds: [String] = []
+    @Published public var recentSearchQueries: [String] = []
+    @Published public var localFavoritedListingIds: Set<String> = []
+    @Published public var savedListingDraft: MarketplaceListingDraft? = nil
+
+    // Suivi Viple Delivery Intégré (Sans Ouvrir le Site Externe) & Réglages Avancés
+    @Published public var activeTrackingResult: MarketplaceVipleDeliveryTrackResponse? = nil
+    @Published public var isShowingVipleDeliverySheet: Bool = false
+    @Published public var isTrackingLoading: Bool = false
+    @Published public var userPreferences: MarketplaceUserPreferences = MarketplaceUserPreferences()
+    @Published public var lastDiagnosticsPing: MarketplaceDiagnosticsPingResponse? = nil
+    @Published public var lastPingLatencyMs: Int = 0
+    @Published public var privacyExportJSON: String? = nil
 
     // Données Marketplace Réelles (Aucune donnée de démo)
     @Published public var listings: [MarketplaceListing] = []
@@ -83,6 +100,23 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
             self.currentUser = savedUser
             self.isAuthenticated = true
         }
+        if let savedRecent = UserDefaults.standard.stringArray(forKey: "livria_marketplace_recent_viewed_v1") {
+            self.recentlyViewedListingIds = savedRecent
+        }
+        if let savedSearches = UserDefaults.standard.stringArray(forKey: "livria_marketplace_recent_searches_v1") {
+            self.recentSearchQueries = savedSearches
+        }
+        if let savedFavs = UserDefaults.standard.stringArray(forKey: "livria_marketplace_local_favs_v1") {
+            self.localFavoritedListingIds = Set(savedFavs)
+        }
+        if let draftData = UserDefaults.standard.data(forKey: "livria_marketplace_draft_v1"),
+           let draft = try? JSONDecoder().decode(MarketplaceListingDraft.self, from: draftData) {
+            self.savedListingDraft = draft
+        }
+        if let prefData = UserDefaults.standard.data(forKey: "livria_marketplace_prefs_v1"),
+           let prefs = try? JSONDecoder().decode(MarketplaceUserPreferences.self, from: prefData) {
+            self.userPreferences = prefs
+        }
 
         Task {
             await bootstrap()
@@ -105,7 +139,13 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         do {
             let resp = try await LivriaMarketplaceAPIClient.shared.fetchBootstrap()
             isServerInMaintenanceOrDown = false
-            self.listings = resp.listings
+            var mergedListings = resp.listings
+            for idx in mergedListings.indices {
+                if self.localFavoritedListingIds.contains(mergedListings[idx].id) {
+                    mergedListings[idx].isFavorited = true
+                }
+            }
+            self.listings = mergedListings
             self.conversations = resp.conversations
             self.offers = resp.offers
             self.orders = resp.orders
@@ -129,6 +169,12 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
                     user: user
                 )
                 await LivriaMarketplaceAPIClient.shared.registerCrossAppSession(sourceApp: "Livria Marketplace")
+                if let remotePrefs = await LivriaMarketplaceAPIClient.shared.fetchUserPreferences() {
+                    self.userPreferences = remotePrefs
+                    if let encoded = try? JSONEncoder().encode(remotePrefs) {
+                        UserDefaults.standard.set(encoded, forKey: "livria_marketplace_prefs_v1")
+                    }
+                }
             } else if !self.isAuthenticated {
                 await checkCrossAppSingleSignOn()
             }
@@ -156,7 +202,7 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         var result = listings.filter { !$0.isSold }
 
         if showOnlyFavorites {
-            result = result.filter { $0.isFavorited }
+            result = result.filter { $0.isFavorited || localFavoritedListingIds.contains($0.id) }
         }
 
         if selectedCategory != .all {
@@ -164,6 +210,14 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
             if selectedSubcategory != "Tous" {
                 result = result.filter { $0.subcategory.localizedCaseInsensitiveContains(selectedSubcategory) }
             }
+        }
+
+        if selectedConditionFilter != "Tous états" {
+            result = result.filter { $0.condition.localizedCaseInsensitiveContains(selectedConditionFilter) }
+        }
+
+        if maxPriceCeiling > 0 {
+            result = result.filter { $0.price <= maxPriceCeiling }
         }
 
         let q = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -219,7 +273,45 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
     }
 
     public var favoriteListings: [MarketplaceListing] {
-        listings.filter { $0.isFavorited }
+        listings.filter { $0.isFavorited || localFavoritedListingIds.contains($0.id) }
+    }
+
+    public var recentlyViewedListings: [MarketplaceListing] {
+        recentlyViewedListingIds.compactMap { id in
+            listings.first(where: { $0.id == id && !$0.isSold })
+        }
+    }
+
+    public func recordListingViewed(_ listing: MarketplaceListing) {
+        recentlyViewedListingIds.removeAll { $0 == listing.id }
+        recentlyViewedListingIds.insert(listing.id, at: 0)
+        if recentlyViewedListingIds.count > 16 {
+            recentlyViewedListingIds = Array(recentlyViewedListingIds.prefix(16))
+        }
+        UserDefaults.standard.set(recentlyViewedListingIds, forKey: "livria_marketplace_recent_viewed_v1")
+    }
+
+    public func clearRecentlyViewedListings() {
+        recentlyViewedListingIds.removeAll()
+        UserDefaults.standard.removeObject(forKey: "livria_marketplace_recent_viewed_v1")
+        showToast("Historique des annonces consultées effacé")
+    }
+
+    public func addRecentSearch(_ rawQuery: String) {
+        let q = rawQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard q.count >= 2 else { return }
+        recentSearchQueries.removeAll { $0.caseInsensitiveCompare(q) == .orderedSame }
+        recentSearchQueries.insert(q, at: 0)
+        if recentSearchQueries.count > 10 {
+            recentSearchQueries = Array(recentSearchQueries.prefix(10))
+        }
+        UserDefaults.standard.set(recentSearchQueries, forKey: "livria_marketplace_recent_searches_v1")
+    }
+
+    public func clearRecentSearches() {
+        recentSearchQueries.removeAll()
+        UserDefaults.standard.removeObject(forKey: "livria_marketplace_recent_searches_v1")
+        showToast("Historique de recherche effacé")
     }
 
     // MARK: - Accès Rapide Écosystème Livria (Livria Store, Livria Social, Les Trocs)
@@ -534,19 +626,23 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
     // MARK: - Création, Modification, Suppression & Favoris d'Annonces
 
     public func toggleFavorite(for listing: MarketplaceListing) {
-        guard isAuthenticated else {
-            showToast("Connectez-vous avec Viple Live ID pour ajouter des favoris.")
-            isShowingAuthSheet = true
-            return
-        }
         guard let idx = listings.firstIndex(where: { $0.id == listing.id }) else { return }
         listings[idx].isFavorited.toggle()
         let isFav = listings[idx].isFavorited
+        if isFav {
+            localFavoritedListingIds.insert(listing.id)
+        } else {
+            localFavoritedListingIds.remove(listing.id)
+        }
+        UserDefaults.standard.set(Array(localFavoritedListingIds), forKey: "livria_marketplace_local_favs_v1")
         listings[idx].favoritesCount += isFav ? 1 : max(-listings[idx].favoritesCount, -1)
+        triggerHapticFeedback()
         showToast(isFav ? "Annonce ajoutée à vos favoris ❤️" : "Retirée de vos favoris")
 
-        Task {
-            _ = await LivriaMarketplaceAPIClient.shared.toggleFavorite(listingId: listing.id)
+        if isAuthenticated {
+            Task {
+                _ = await LivriaMarketplaceAPIClient.shared.toggleFavorite(listingId: listing.id)
+            }
         }
     }
 
@@ -1012,6 +1108,154 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         _ = try? await LivriaMarketplaceAPIClient.shared.cancelTakerApplication(applicationId: appId)
         self.takerApplication = nil
         showToast("Votre demande Viple Taker a été annulée.")
+    }
+
+    // MARK: - Suivi Colis Viple Delivery Intégré (Sans Ouvrir le Site Externe) & Confirmation de Réception
+
+    public func trackOrderInApp(_ order: MarketplaceOrder) async {
+        isTrackingLoading = true
+        let codeToTrack = !order.vipleDeliveryBarcode.isEmpty ? order.vipleDeliveryBarcode : order.orderNumber
+        if let remote = await LivriaMarketplaceAPIClient.shared.trackVipleDelivery(
+            trackingOrOrderCode: codeToTrack,
+            orderId: order.orderNumber
+        ), remote.found {
+            self.activeTrackingResult = remote
+        } else {
+            self.activeTrackingResult = MarketplaceVipleDeliveryTrackResponse.fallback(for: order)
+        }
+        isTrackingLoading = false
+        isShowingVipleDeliverySheet = true
+    }
+
+    public func trackParcelByCodeInApp(_ rawCode: String) async {
+        let clean = rawCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else {
+            showToast("Saisissez un numéro de commande, code-barres Looby Taker ou N° UPS.")
+            return
+        }
+        isTrackingLoading = true
+        if let matchedOrder = orders.first(where: {
+            $0.orderNumber.caseInsensitiveCompare(clean) == .orderedSame ||
+            $0.vipleDeliveryBarcode.caseInsensitiveCompare(clean) == .orderedSame ||
+            $0.upsTrackingNumber.caseInsensitiveCompare(clean) == .orderedSame
+        }) {
+            await trackOrderInApp(matchedOrder)
+            return
+        }
+        if let remote = await LivriaMarketplaceAPIClient.shared.trackVipleDelivery(
+            trackingOrOrderCode: clean,
+            orderId: clean
+        ) {
+            self.activeTrackingResult = remote
+            isTrackingLoading = false
+            isShowingVipleDeliverySheet = true
+        } else {
+            isTrackingLoading = false
+            showToast("Aucun colis trouvé pour la référence « \(clean) ».")
+        }
+    }
+
+    public func confirmOrderReceipt(_ orderIdOrNumber: String) async {
+        let result = await LivriaMarketplaceAPIClient.shared.confirmOrderReceipt(orderId: orderIdOrNumber)
+        if let idx = orders.firstIndex(where: { $0.id == orderIdOrNumber || $0.orderNumber == orderIdOrNumber }) {
+            orders[idx].status = result.newStatus ?? "Colis remis et réception confirmée (+25 XP)"
+        }
+        if var tracking = activeTrackingResult,
+           tracking.orderReference.caseInsensitiveCompare(orderIdOrNumber) == .orderedSame {
+            tracking.currentStatus = result.newStatus ?? "Colis remis et réception confirmée"
+            tracking.progressPercent = 100
+            for idx in tracking.steps.indices {
+                tracking.steps[idx].isCompleted = true
+                tracking.steps[idx].isCurrent = (idx == tracking.steps.count - 1)
+            }
+            activeTrackingResult = tracking
+        }
+        triggerHapticFeedback()
+        showToast(result.message)
+    }
+
+    public func reportListing(_ listing: MarketplaceListing, reason: String, details: String) async {
+        _ = await LivriaMarketplaceAPIClient.shared.reportListing(
+            listingId: listing.id,
+            reason: reason,
+            details: details
+        )
+        triggerHapticFeedback()
+        showToast("Signalement transmis à l'équipe de modération Livria.")
+    }
+
+    // MARK: - Sauvegarde Automatique de Brouillon d'Annonce
+
+    public func saveListingDraft(_ draft: MarketplaceListingDraft) {
+        self.savedListingDraft = draft
+        if let encoded = try? JSONEncoder().encode(draft) {
+            UserDefaults.standard.set(encoded, forKey: "livria_marketplace_draft_v1")
+        }
+        showToast("Brouillon d'annonce enregistré localement")
+    }
+
+    public func clearListingDraft() {
+        self.savedListingDraft = nil
+        UserDefaults.standard.removeObject(forKey: "livria_marketplace_draft_v1")
+    }
+
+    // MARK: - Réglages Avancés, Cache, Export RGPD & Diagnostics
+
+    public func saveAndSyncPreferences(_ newPrefs: MarketplaceUserPreferences) {
+        self.userPreferences = newPrefs
+        if let encoded = try? JSONEncoder().encode(newPrefs) {
+            UserDefaults.standard.set(encoded, forKey: "livria_marketplace_prefs_v1")
+        }
+        Task {
+            _ = await LivriaMarketplaceAPIClient.shared.saveUserPreferences(newPrefs)
+        }
+        showToast("Réglages Marketplace enregistrés et synchronisés")
+    }
+
+    public func clearLocalCache() {
+        URLCache.shared.removeAllCachedResponses()
+        recentlyViewedListingIds.removeAll()
+        recentSearchQueries.removeAll()
+        UserDefaults.standard.removeObject(forKey: "livria_marketplace_recent_viewed_v1")
+        UserDefaults.standard.removeObject(forKey: "livria_marketplace_recent_searches_v1")
+        triggerHapticFeedback()
+        showToast("Cache média et historiques locaux purgés")
+    }
+
+    public func runDiagnosticsCheck() async {
+        let (ping, ms) = await LivriaMarketplaceAPIClient.shared.pingDiagnostics()
+        self.lastDiagnosticsPing = ping
+        self.lastPingLatencyMs = ms
+        showToast("Serveur Livria opérationnel (\(ms) ms • Sécurité non-bloquante active)")
+    }
+
+    public func requestPrivacyExport() async {
+        if let exported = await LivriaMarketplaceAPIClient.shared.exportPrivacyData() {
+            self.privacyExportJSON = exported
+            showToast("Export RGPD généré avec succès")
+        } else {
+            let fallback: [String: Any] = [
+                "exportedAtUtc": ISO8601DateFormatter().string(from: Date()),
+                "app": "Livria Marketplace iOS",
+                "user": currentUser?.username ?? "visiteur",
+                "email": currentUser?.email ?? "",
+                "favoritesCount": favoriteListings.count,
+                "ordersCount": orders.count
+            ]
+            if let data = try? JSONSerialization.data(withJSONObject: fallback, options: [.prettyPrinted]),
+               let str = String(data: data, encoding: .utf8) {
+                self.privacyExportJSON = str
+            }
+            showToast("Export RGPD local prêt")
+        }
+    }
+
+    public func triggerHapticFeedback() {
+        guard userPreferences.hapticFeedbackEnabled else { return }
+        #if canImport(UIKit)
+        let generator = UIImpactFeedbackGenerator(style: .light)
+        generator.impactOccurred()
+        #endif
     }
 
     // MARK: - Toast Helper

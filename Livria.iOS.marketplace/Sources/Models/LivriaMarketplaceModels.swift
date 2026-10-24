@@ -1617,3 +1617,342 @@ public struct MarketplaceISBNLookupResult: Codable, Hashable, Sendable {
         self.summary = summary
     }
 }
+
+// MARK: - Suivi Colis Viple Delivery Intégré (Sans Ouvrir le Site Externe) & Réglages Avancés
+
+public struct MarketplaceVipleDeliveryStep: Identifiable, Codable, Hashable, Sendable {
+    public var id: String { code }
+    public var code: String
+    public var title: String
+    public var subtitle: String
+    public var isCompleted: Bool
+    public var isCurrent: Bool
+    public var timestamp: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case code, title, subtitle, isCompleted, isCurrent, timestamp
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.code = (try? c.decode(String.self, forKey: .code)) ?? UUID().uuidString
+        self.title = (try? c.decode(String.self, forKey: .title)) ?? ""
+        self.subtitle = (try? c.decode(String.self, forKey: .subtitle)) ?? ""
+        self.isCompleted = (try? c.decode(Bool.self, forKey: .isCompleted)) ?? false
+        self.isCurrent = (try? c.decode(Bool.self, forKey: .isCurrent)) ?? false
+        self.timestamp = try? c.decode(String.self, forKey: .timestamp)
+    }
+
+    public init(code: String, title: String, subtitle: String, isCompleted: Bool, isCurrent: Bool, timestamp: String? = nil) {
+        self.code = code
+        self.title = title
+        self.subtitle = subtitle
+        self.isCompleted = isCompleted
+        self.isCurrent = isCurrent
+        self.timestamp = timestamp
+    }
+}
+
+public struct MarketplaceVipleDeliveryEvent: Identifiable, Codable, Hashable, Sendable {
+    public var id: String { "\(timestamp)-\(label)" }
+    public var timestamp: String
+    public var location: String
+    public var label: String
+    public var details: String
+    public var icon: String
+
+    private enum CodingKeys: String, CodingKey {
+        case timestamp, location, label, details, icon
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.timestamp = (try? c.decode(String.self, forKey: .timestamp)) ?? ""
+        self.location = (try? c.decode(String.self, forKey: .location)) ?? "Hub Viple Delivery"
+        self.label = (try? c.decode(String.self, forKey: .label)) ?? ""
+        self.details = (try? c.decode(String.self, forKey: .details)) ?? ""
+        self.icon = (try? c.decode(String.self, forKey: .icon)) ?? "shippingbox.fill"
+    }
+
+    public init(timestamp: String, location: String, label: String, details: String, icon: String = "shippingbox.fill") {
+        self.timestamp = timestamp
+        self.location = location
+        self.label = label
+        self.details = details
+        self.icon = icon
+    }
+}
+
+public struct MarketplaceVipleDeliveryTrackResponse: Codable, Hashable, Sendable {
+    public var ok: Bool
+    public var found: Bool
+    public var sourceType: String
+    public var orderReference: String
+    public var vipleDeliveryTrackingCode: String
+    public var upsTrackingNumber: String?
+    public var loobyTakerBarcode: String?
+    public var labelDownloadUrl: String?
+    public var carrierName: String
+    public var deliveryMode: String
+    public var currentStatus: String
+    public var progressPercent: Int
+    public var estimatedDeliveryText: String
+    public var recipientName: String
+    public var destinationAddress: String
+    public var takerRemunerationEur: Double
+    public var steps: [MarketplaceVipleDeliveryStep]
+    public var events: [MarketplaceVipleDeliveryEvent]
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, found, sourceType, orderReference, vipleDeliveryTrackingCode, upsTrackingNumber
+        case loobyTakerBarcode, labelDownloadUrl, carrierName, deliveryMode, currentStatus
+        case progressPercent, estimatedDeliveryText, recipientName, destinationAddress
+        case takerRemunerationEur, steps, events
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+        self.found = (try? c.decode(Bool.self, forKey: .found)) ?? true
+        self.sourceType = (try? c.decode(String.self, forKey: .sourceType)) ?? "marketplace"
+        self.orderReference = (try? c.decode(String.self, forKey: .orderReference)) ?? ""
+        self.vipleDeliveryTrackingCode = (try? c.decode(String.self, forKey: .vipleDeliveryTrackingCode)) ?? ""
+        self.upsTrackingNumber = try? c.decode(String.self, forKey: .upsTrackingNumber)
+        self.loobyTakerBarcode = try? c.decode(String.self, forKey: .loobyTakerBarcode)
+        self.labelDownloadUrl = try? c.decode(String.self, forKey: .labelDownloadUrl)
+        self.carrierName = (try? c.decode(String.self, forKey: .carrierName)) ?? "Viple Delivery & UPS"
+        self.deliveryMode = (try? c.decode(String.self, forKey: .deliveryMode)) ?? "Point Relais Viple Taker"
+        self.currentStatus = (try? c.decode(String.self, forKey: .currentStatus)) ?? "En cours d'acheminement"
+        self.progressPercent = (try? c.decode(Int.self, forKey: .progressPercent)) ?? 68
+        self.estimatedDeliveryText = (try? c.decode(String.self, forKey: .estimatedDeliveryText)) ?? "Livraison estimée sous 24h à 48h (0,00 €)"
+        self.recipientName = (try? c.decode(String.self, forKey: .recipientName)) ?? "Membre Livria"
+        self.destinationAddress = (try? c.decode(String.self, forKey: .destinationAddress)) ?? "Point Relais Viple Taker"
+        self.takerRemunerationEur = (try? c.decode(Double.self, forKey: .takerRemunerationEur)) ?? 1.00
+        self.steps = (try? c.decode([MarketplaceVipleDeliveryStep].self, forKey: .steps)) ?? []
+        self.events = (try? c.decode([MarketplaceVipleDeliveryEvent].self, forKey: .events)) ?? []
+    }
+
+    public static func fallback(for order: MarketplaceOrder) -> MarketplaceVipleDeliveryTrackResponse {
+        let step1 = MarketplaceVipleDeliveryStep(
+            code: "PREPARED",
+            title: "Commande validée & Étiquette générée",
+            subtitle: "Garantie et Maintien du service Livria (1,00 €) • Port 0,00 €",
+            isCompleted: true,
+            isCurrent: false,
+            timestamp: order.createdAtDisplay
+        )
+        let step2 = MarketplaceVipleDeliveryStep(
+            code: "IN_TRANSIT",
+            title: "Prise en charge Viple Delivery / UPS",
+            subtitle: "Suivi UPS \(order.upsTrackingNumber)",
+            isCompleted: true,
+            isCurrent: true,
+            timestamp: "Aujourd'hui"
+        )
+        let step3 = MarketplaceVipleDeliveryStep(
+            code: "RELAY_SCAN",
+            title: "Scan Looby Taker au Point Relais",
+            subtitle: "Code-barres \(order.vipleDeliveryBarcode) • 1,00 € reversé au Viple Taker",
+            isCompleted: false,
+            isCurrent: false
+        )
+        let step4 = MarketplaceVipleDeliveryStep(
+            code: "DELIVERED",
+            title: "Colis remis à l'acheteur",
+            subtitle: "Confirmation de bonne réception (+25 XP)",
+            isCompleted: false,
+            isCurrent: false
+        )
+        let ev1 = MarketplaceVipleDeliveryEvent(
+            timestamp: "En transit",
+            location: order.relayName ?? "Réseau Viple Delivery & UPS",
+            label: "Acheminement vers le point de remise",
+            details: "Étiquette Viple Delivery \(order.vipleDeliveryBarcode) prête pour scan dans Looby Taker.",
+            icon: "truck.box.fill"
+        )
+        let ev2 = MarketplaceVipleDeliveryEvent(
+            timestamp: order.createdAtDisplay,
+            location: "Livria Marketplace",
+            label: "Bordereau d'expédition émis",
+            details: "Article « \(order.listingTitle) » commandé (0,00 € de port).",
+            icon: "barcode.viewfinder"
+        )
+        return MarketplaceVipleDeliveryTrackResponse(
+            ok: true,
+            found: true,
+            sourceType: "marketplace",
+            orderReference: order.orderNumber,
+            vipleDeliveryTrackingCode: order.vipleDeliveryBarcode,
+            upsTrackingNumber: order.upsTrackingNumber,
+            loobyTakerBarcode: order.vipleDeliveryBarcode,
+            labelDownloadUrl: nil,
+            carrierName: "Viple Delivery & UPS",
+            deliveryMode: order.deliveryMode,
+            currentStatus: order.status,
+            progressPercent: 68,
+            estimatedDeliveryText: "Livraison estimée sous 24h à 48h (0,00 €)",
+            recipientName: "Acheteur Livria",
+            destinationAddress: [order.relayName, order.relayAddress].compactMap { $0 }.joined(separator: " — "),
+            takerRemunerationEur: 1.00,
+            steps: [step1, step2, step3, step4],
+            events: [ev1, ev2]
+        )
+    }
+
+    public init(
+        ok: Bool,
+        found: Bool,
+        sourceType: String,
+        orderReference: String,
+        vipleDeliveryTrackingCode: String,
+        upsTrackingNumber: String?,
+        loobyTakerBarcode: String?,
+        labelDownloadUrl: String?,
+        carrierName: String,
+        deliveryMode: String,
+        currentStatus: String,
+        progressPercent: Int,
+        estimatedDeliveryText: String,
+        recipientName: String,
+        destinationAddress: String,
+        takerRemunerationEur: Double,
+        steps: [MarketplaceVipleDeliveryStep],
+        events: [MarketplaceVipleDeliveryEvent]
+    ) {
+        self.ok = ok
+        self.found = found
+        self.sourceType = sourceType
+        self.orderReference = orderReference
+        self.vipleDeliveryTrackingCode = vipleDeliveryTrackingCode
+        self.upsTrackingNumber = upsTrackingNumber
+        self.loobyTakerBarcode = loobyTakerBarcode
+        self.labelDownloadUrl = labelDownloadUrl
+        self.carrierName = carrierName
+        self.deliveryMode = deliveryMode
+        self.currentStatus = currentStatus
+        self.progressPercent = progressPercent
+        self.estimatedDeliveryText = estimatedDeliveryText
+        self.recipientName = recipientName
+        self.destinationAddress = destinationAddress
+        self.takerRemunerationEur = takerRemunerationEur
+        self.steps = steps
+        self.events = events
+    }
+}
+
+public struct MarketplaceUserPreferences: Codable, Hashable, Sendable {
+    public var notificationsOrders: Bool
+    public var notificationsOffers: Bool
+    public var notificationsMessages: Bool
+    public var notificationsPriceDrops: Bool
+    public var hapticFeedbackEnabled: Bool
+    public var compactGridMode: Bool
+    public var dataSaverImages: Bool
+    public var defaultDeliveryMode: String
+    public var defaultSearchPostalCode: String
+    public var defaultSearchCity: String
+    public var privacyHideOnlineStatus: Bool
+
+    public init(
+        notificationsOrders: Bool = true,
+        notificationsOffers: Bool = true,
+        notificationsMessages: Bool = true,
+        notificationsPriceDrops: Bool = true,
+        hapticFeedbackEnabled: Bool = true,
+        compactGridMode: Bool = false,
+        dataSaverImages: Bool = false,
+        defaultDeliveryMode: String = "Point Relais Viple Taker (Particulier)",
+        defaultSearchPostalCode: String = "54000",
+        defaultSearchCity: String = "Nancy",
+        privacyHideOnlineStatus: Bool = false
+    ) {
+        self.notificationsOrders = notificationsOrders
+        self.notificationsOffers = notificationsOffers
+        self.notificationsMessages = notificationsMessages
+        self.notificationsPriceDrops = notificationsPriceDrops
+        self.hapticFeedbackEnabled = hapticFeedbackEnabled
+        self.compactGridMode = compactGridMode
+        self.dataSaverImages = dataSaverImages
+        self.defaultDeliveryMode = defaultDeliveryMode
+        self.defaultSearchPostalCode = defaultSearchPostalCode
+        self.defaultSearchCity = defaultSearchCity
+        self.privacyHideOnlineStatus = privacyHideOnlineStatus
+    }
+}
+
+public struct MarketplaceDiagnosticsPingResponse: Codable, Hashable, Sendable {
+    public var ok: Bool
+    public var service: String
+    public var status: String
+    public var serverTimeUtc: String
+    public var nonBlockingSecurity: Bool
+    public var ipRateLimitingEnabled: Bool
+    public var vipleDeliveryNativeTrackingReady: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, service, status, serverTimeUtc, nonBlockingSecurity, ipRateLimitingEnabled, vipleDeliveryNativeTrackingReady
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+        self.service = (try? c.decode(String.self, forKey: .service)) ?? "Livria Marketplace Mobile API"
+        self.status = (try? c.decode(String.self, forKey: .status)) ?? "operational"
+        self.serverTimeUtc = (try? c.decode(String.self, forKey: .serverTimeUtc)) ?? ""
+        self.nonBlockingSecurity = (try? c.decode(Bool.self, forKey: .nonBlockingSecurity)) ?? true
+        self.ipRateLimitingEnabled = (try? c.decode(Bool.self, forKey: .ipRateLimitingEnabled)) ?? false
+        self.vipleDeliveryNativeTrackingReady = (try? c.decode(Bool.self, forKey: .vipleDeliveryNativeTrackingReady)) ?? true
+    }
+}
+
+public struct MarketplaceListingDraft: Codable, Hashable, Sendable {
+    public var categoryRaw: String
+    public var subcategory: String
+    public var title: String
+    public var subtitle: String
+    public var descriptionText: String
+    public var condition: String
+    public var priceString: String
+    public var originalPriceString: String
+    public var isbnInput: String
+    public var authorOrArtist: String
+    public var publisherOrBrand: String
+    public var releaseYear: String
+    public var clothingSize: String
+    public var photos: [String]
+    public var savedAt: Date
+
+    public init(
+        categoryRaw: String,
+        subcategory: String,
+        title: String,
+        subtitle: String,
+        descriptionText: String,
+        condition: String,
+        priceString: String,
+        originalPriceString: String,
+        isbnInput: String,
+        authorOrArtist: String,
+        publisherOrBrand: String,
+        releaseYear: String,
+        clothingSize: String,
+        photos: [String],
+        savedAt: Date = Date()
+    ) {
+        self.categoryRaw = categoryRaw
+        self.subcategory = subcategory
+        self.title = title
+        self.subtitle = subtitle
+        self.descriptionText = descriptionText
+        self.condition = condition
+        self.priceString = priceString
+        self.originalPriceString = originalPriceString
+        self.isbnInput = isbnInput
+        self.authorOrArtist = authorOrArtist
+        self.publisherOrBrand = publisherOrBrand
+        self.releaseYear = releaseYear
+        self.clothingSize = clothingSize
+        self.photos = photos
+        self.savedAt = savedAt
+    }
+}

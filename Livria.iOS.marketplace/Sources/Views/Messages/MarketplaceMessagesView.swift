@@ -9,14 +9,19 @@ import UIKit
 public struct MarketplaceMessagesView: View {
     @EnvironmentObject private var store: LivriaMarketplaceViewModel
     @State private var searchConversationQuery: String = ""
+    @State private var showUnreadOnly: Bool = false
     @State private var selectedConversation: MarketplaceConversationPreview? = nil
 
     public init() {}
 
     private var filteredConversations: [MarketplaceConversationPreview] {
+        var list = store.conversations
+        if showUnreadOnly {
+            list = list.filter { $0.unreadCount > 0 }
+        }
         let q = searchConversationQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !q.isEmpty else { return store.conversations }
-        return store.conversations.filter {
+        guard !q.isEmpty else { return list }
+        return list.filter {
             $0.listingTitle.localizedCaseInsensitiveContains(q) ||
             $0.otherUsername.localizedCaseInsensitiveContains(q) ||
             $0.otherDisplayName.localizedCaseInsensitiveContains(q) ||
@@ -50,6 +55,19 @@ public struct MarketplaceMessagesView: View {
                                         .foregroundStyle(MarketplacePalette.inkMuted)
                                 }
                                 Spacer()
+                                Button {
+                                    withAnimation(.spring(response: 0.25)) {
+                                        showUnreadOnly.toggle()
+                                    }
+                                } label: {
+                                    Text(showUnreadOnly ? "Non-lus ✓" : "Non-lus")
+                                        .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                                        .padding(.horizontal, 10)
+                                        .padding(.vertical, 6)
+                                        .background(Capsule().fill(showUnreadOnly ? MarketplacePalette.primary : MarketplacePalette.primarySoft))
+                                        .foregroundStyle(showUnreadOnly ? .white : MarketplacePalette.primary)
+                                }
+                                .buttonStyle(.plain)
                             }
 
                             HStack(spacing: 8) {
@@ -388,10 +406,37 @@ public struct MarketplaceChatThreadView: View {
         .overlay(Rectangle().fill(MarketplacePalette.border).frame(height: 1), alignment: .bottom)
     }
 
-    // MARK: - Barre de Saisie Riche (Photo Galerie, GIF Giphy, Message Vocal .m4a, Offre & Texte)
+    // MARK: - Barre de Saisie Riche (Réponses Rapides 1-Tap, Photo Galerie, GIF Giphy, Message Vocal .m4a, Offre & Texte)
 
     private var composerBar: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach([
+                        "Est-il toujours disponible ?",
+                        "Envoi en Point Relais Viple Taker ?",
+                        "Quel est l'état exact de la couverture ?",
+                        "Merci, je prépare le colis aujourd'hui !"
+                    ], id: \.self) { quickReply in
+                        Button {
+                            Task {
+                                await store.sendMessage(in: conversation, text: quickReply)
+                            }
+                        } label: {
+                            Text(quickReply)
+                                .font(.system(size: 11, weight: .semibold, design: .rounded))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(Capsule().fill(MarketplacePalette.primarySoft))
+                                .foregroundStyle(MarketplacePalette.primary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
+            }
+
             if store.isRecordingVoiceNote {
                 HStack(spacing: 12) {
                     Circle()
@@ -638,6 +683,18 @@ public struct MarketplaceMessageBubbleView: View {
                         RoundedRectangle(cornerRadius: 18, style: .continuous)
                             .stroke(message.isFromMe ? Color.clear : MarketplacePalette.border, lineWidth: 1)
                     )
+                    .contextMenu {
+                        if !message.text.isEmpty {
+                            Button {
+                                #if canImport(UIKit)
+                                UIPasteboard.general.string = message.text
+                                #endif
+                                store.showToast("Message copié dans le presse-papiers")
+                            } label: {
+                                Label("Copier le message", systemImage: "doc.on.doc")
+                            }
+                        }
+                    }
                     .foregroundStyle(message.isFromMe ? .white : MarketplacePalette.ink)
                 }
 

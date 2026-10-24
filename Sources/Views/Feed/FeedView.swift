@@ -18,9 +18,11 @@ public struct FeedView: View {
     @State private var postPendingDeletion: SocialFeedPost? = nil
     @State private var commentDrafts: [Int: String] = [:]
     @State private var expandedCommentsPostIds: Set<Int> = []
+    @State private var revealedSpoilerPostIds: Set<Int> = []
 
     private let filters: [(id: String, label: String, icon: String)] = [
         ("all", "🌈 Tout le fil", "sparkles"),
+        ("saved", "🔖 Enregistrés", "bookmark.fill"),
         ("books", "📖 Livres", "book.fill"),
         ("lists", "🗂️ Listes (€)", "list.bullet.rectangle.portrait.fill"),
         ("media", "📸 Photos & Vidéos", "photo.on.rectangle.angled")
@@ -386,20 +388,28 @@ public struct FeedView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Filtres du Fil d'Actualité
+    // MARK: - Filtres & Tri du Fil d'Actualité
 
     private var filterChipsBar: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(filters, id: \.id) { item in
-                    let isSelected = social.feedFilter == item.id
-                    Button {
-                        social.feedFilter = item.id
-                        Task {
-                            await social.refreshBootstrap(filter: item.id)
-                        }
-                    } label: {
-                        Text(item.label)
+        VStack(alignment: .leading, spacing: 10) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(filters, id: \.id) { item in
+                        let isSelected = social.feedFilter == item.id
+                        Button {
+                            social.feedFilter = item.id
+                            if item.id != "saved" {
+                                Task {
+                                    await social.refreshBootstrap(filter: item.id)
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 4) {
+                                Text(item.label)
+                                if item.id == "saved" && !social.bookmarkedPostIds.isEmpty {
+                                    Text("(\(social.bookmarkedPostIds.count))")
+                                }
+                            }
                             .font(.system(size: 12.5, weight: .bold, design: .rounded))
                             .padding(.horizontal, 14)
                             .padding(.vertical, 8)
@@ -412,8 +422,59 @@ public struct FeedView: View {
                             )
                             .foregroundStyle(.white)
                             .overlay(Capsule().stroke(LivriaSocialPalette.border, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
+                }
+            }
+
+            HStack(spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .foregroundStyle(LivriaSocialPalette.gold)
+                    TextField("Filtrer dans les posts (mot-clé, livre, auteur)...", text: $social.feedPostQuery)
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.white)
+                    if !social.feedPostQuery.isEmpty {
+                        Button {
+                            social.feedPostQuery = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(LivriaSocialPalette.textMuted)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.07)))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(LivriaSocialPalette.border, lineWidth: 1))
+
+                Menu {
+                    ForEach(["Récents", "Populaires 🔥", "Commentés 💬"], id: \.self) { mode in
+                        Button {
+                            social.feedSortMode = mode
+                        } label: {
+                            HStack {
+                                Text(mode)
+                                if social.feedSortMode == mode {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.up.arrow.down")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(social.feedSortMode)
+                            .font(.system(size: 11.5, weight: .bold, design: .rounded))
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.09)))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(LivriaSocialPalette.border, lineWidth: 1))
+                    .foregroundStyle(LivriaSocialPalette.gold)
                 }
             }
         }
@@ -422,23 +483,30 @@ public struct FeedView: View {
     // MARK: - Cartes du Fil d'Actualité
 
     private var feedPostsStack: some View {
-        VStack(spacing: 16) {
-            if social.posts.isEmpty {
+        let visiblePosts = social.displayedFeedPosts
+        return VStack(spacing: 16) {
+            if visiblePosts.isEmpty {
                 VStack(spacing: 12) {
-                    Image(systemName: "sparkles.rectangle.stack")
+                    Image(systemName: social.feedFilter == "saved" ? "bookmark.slash" : "sparkles.rectangle.stack")
                         .font(.system(size: 44))
                         .foregroundStyle(LivriaSocialPalette.gold)
-                    Text("Aucune publication dans cette catégorie")
+                    Text(social.feedFilter == "saved" ? "Aucun signet enregistré pour le moment" : "Aucune publication dans cette catégorie")
                         .font(.system(size: 16, weight: .bold, design: .rounded))
                         .foregroundStyle(.white)
-                    Text("Soyez le premier à partager un coup de cœur, une photo ou une recommandation de livre (+15 XP) !")
+                    Text(social.feedFilter == "saved"
+                         ? "Appuyez sur l'icône 🔖 sur n'importe quelle publication du fil pour la retrouver ici à tout moment."
+                         : "Soyez le premier à partager un coup de cœur, une photo ou une recommandation de livre (+15 XP) !")
                         .font(.system(size: 13))
                         .foregroundStyle(LivriaSocialPalette.textMuted)
                         .multilineTextAlignment(.center)
                     Button {
-                        social.isShowingCreatePostSheet = true
+                        if social.feedFilter == "saved" {
+                            social.feedFilter = "all"
+                        } else {
+                            social.isShowingCreatePostSheet = true
+                        }
                     } label: {
-                        Text("Publier maintenant (+15 XP)")
+                        Text(social.feedFilter == "saved" ? "Explorer tout le fil" : "Publier maintenant (+15 XP)")
                             .font(.system(size: 14, weight: .bold))
                             .padding(.horizontal, 18)
                             .padding(.vertical, 10)
@@ -450,7 +518,7 @@ public struct FeedView: View {
                 .frame(maxWidth: .infinity)
                 .socialCard(padding: 24)
             } else {
-                ForEach(social.posts) { post in
+                ForEach(visiblePosts) { post in
                     feedPostCard(post: post)
                 }
             }
@@ -500,9 +568,27 @@ public struct FeedView: View {
                     .background(Capsule().fill(LivriaSocialPalette.primary.opacity(0.25)))
                     .foregroundStyle(.white)
 
-                if let currentUid = social.currentUser?.id,
-                   (post.userId == currentUid || post.author.id == currentUid) {
-                    Menu {
+                Button {
+                    social.togglePostBookmark(post.id)
+                } label: {
+                    Image(systemName: social.isPostBookmarked(post.id) ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(social.isPostBookmarked(post.id) ? LivriaSocialPalette.gold : LivriaSocialPalette.textMuted)
+                }
+                .buttonStyle(.plain)
+
+                Menu {
+                    Button {
+                        #if canImport(UIKit)
+                        UIPasteboard.general.string = post.content
+                        #endif
+                        social.showToast("Texte de la publication copié")
+                    } label: {
+                        Label("Copier le texte", systemImage: "doc.on.doc")
+                    }
+
+                    if let currentUid = social.currentUser?.id,
+                       (post.userId == currentUid || post.author.id == currentUid) {
                         Button {
                             postBeingEdited = post
                         } label: {
@@ -513,21 +599,55 @@ public struct FeedView: View {
                         } label: {
                             Label("Supprimer la publication", systemImage: "trash")
                         }
-                    } label: {
-                        Image(systemName: "ellipsis.circle.fill")
-                            .font(.system(size: 20, weight: .bold))
-                            .foregroundStyle(LivriaSocialPalette.textMuted)
-                            .padding(.leading, 2)
+                    } else {
+                        Menu("Signaler la publication") {
+                            ForEach(["Spoiler non balisé", "Contenu inapproprié", "Spam / Publicité"], id: \.self) { reason in
+                                Button(reason) {
+                                    Task {
+                                        await social.reportPost(post, reason: reason)
+                                    }
+                                }
+                            }
+                        }
                     }
+                } label: {
+                    Image(systemName: "ellipsis.circle.fill")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(LivriaSocialPalette.textMuted)
+                        .padding(.leading, 2)
                 }
             }
 
-            // Contenu texte
+            // Contenu texte avec protection anti-spoiler optionnelle
             if !post.content.isEmpty {
-                Text(post.content)
-                    .font(.system(size: 14.5))
-                    .foregroundStyle(.white.opacity(0.95))
-                    .lineSpacing(3)
+                let isSpoiler = social.userPreferences.spoilerProtectionEnabled
+                    && (post.content.localizedCaseInsensitiveContains("[spoiler]") || post.content.localizedCaseInsensitiveContains("#spoiler"))
+                    && !revealedSpoilerPostIds.contains(post.id)
+
+                if isSpoiler {
+                    Button {
+                        withAnimation(.spring(response: 0.25)) {
+                            revealedSpoilerPostIds.insert(post.id)
+                        }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "eye.slash.fill")
+                                .foregroundStyle(LivriaSocialPalette.gold)
+                            Text("Publication contenant un spoiler littéraire • Appuyer pour révéler")
+                                .font(.system(size: 12.5, weight: .bold, design: .rounded))
+                                .foregroundStyle(.white)
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.08)))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text(post.content)
+                        .font(.system(size: 14.5))
+                        .foregroundStyle(.white.opacity(0.95))
+                        .lineSpacing(3)
+                }
             }
 
             // Média Photo / Vidéo éventuel

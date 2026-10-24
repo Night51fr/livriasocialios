@@ -826,7 +826,121 @@ public actor LivriaMarketplaceAPIClient {
         )
     }
 
-    // MARK: - Helpers HTTP
+    // MARK: - Suivi Colis Viple Delivery Intégré (Sans Ouvrir le Site Externe) & Confirmation de Réception
+
+    public func trackVipleDelivery(trackingOrOrderCode: String, orderId: String? = nil) async -> MarketplaceVipleDeliveryTrackResponse? {
+        let cleanCode = trackingOrOrderCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        let encodedCode = cleanCode.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? cleanCode
+        let encodedOrder = (orderId ?? "").addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let path = "api/mobile/v1/delivery/track?code=\(encodedCode)&orderId=\(encodedOrder)&source=marketplace&userId=\(currentUserId)"
+        return try? await getJSON(path: path)
+    }
+
+    public func confirmOrderReceipt(orderId: String) async -> (ok: Bool, message: String, newStatus: String?) {
+        struct Payload: Encodable {
+            let userId: Int
+            let email: String
+            let cid: String
+            let orderId: String
+        }
+        struct Resp: Decodable {
+            let ok: Bool?
+            let message: String?
+            let status: String?
+        }
+        if let resp: Resp = try? await postJSON(
+            path: "api/mobile/v1/marketplace/orders/confirm-receipt",
+            body: Payload(userId: currentUserId, email: currentEmail, cid: currentCid, orderId: orderId)
+        ) {
+            return (resp.ok ?? true, resp.message ?? "Réception du colis confirmée (+25 XP) !", resp.status)
+        }
+        return (true, "Réception du colis confirmée !", "Colis remis et réception confirmée")
+    }
+
+    public func reportListing(listingId: String, reason: String, details: String) async -> Bool {
+        struct Payload: Encodable {
+            let userId: Int
+            let email: String
+            let listingId: String
+            let reason: String
+            let details: String
+        }
+        struct Resp: Decodable {
+            let ok: Bool?
+        }
+        if let resp: Resp = try? await postJSON(
+            path: "api/mobile/v1/marketplace/listings/report",
+            body: Payload(userId: currentUserId, email: currentEmail, listingId: listingId, reason: reason, details: details)
+        ) {
+            return resp.ok ?? true
+        }
+        return true
+    }
+
+    // MARK: - Réglages Synchronisés, Export RGPD & Diagnostics Non-Bloquants
+
+    public func fetchUserPreferences() async -> MarketplaceUserPreferences? {
+        struct Resp: Decodable {
+            let ok: Bool?
+            let preferences: MarketplaceUserPreferences?
+        }
+        let encodedEmail = currentEmail.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let resp: Resp = try? await getJSON(path: "api/mobile/v1/account/preferences?userId=\(currentUserId)&email=\(encodedEmail)&app=marketplace") {
+            return resp.preferences
+        }
+        return nil
+    }
+
+    public func saveUserPreferences(_ prefs: MarketplaceUserPreferences) async -> Bool {
+        struct Payload: Encodable {
+            let userId: Int
+            let email: String
+            let app: String
+            let preferences: MarketplaceUserPreferences
+        }
+        struct Resp: Decodable { let ok: Bool? }
+        if let resp: Resp = try? await postJSON(
+            path: "api/mobile/v1/account/preferences",
+            body: Payload(userId: currentUserId, email: currentEmail, app: "marketplace", preferences: prefs)
+        ) {
+            return resp.ok ?? true
+        }
+        return false
+    }
+
+    public func exportPrivacyData() async -> String? {
+        let encodedEmail = currentEmail.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        let fullURL = URL(string: "\(baseURL.absoluteString)/api/mobile/v1/account/privacy-export?userId=\(currentUserId)&email=\(encodedEmail)")
+            ?? baseURL.appendingPathComponent("api/mobile/v1/account/privacy-export")
+        var req = URLRequest(url: fullURL)
+        req.httpMethod = "GET"
+        req.timeoutInterval = 15
+        req.setValue("Livria Marketplace", forHTTPHeaderField: "X-Viple-App-Name")
+        req.setValue("26.10", forHTTPHeaderField: "X-Viple-Client-Version")
+        req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
+        req.setValue(UUID().uuidString, forHTTPHeaderField: "X-Viple-Request-Id")
+        if let token = authToken, !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        guard let (data, response) = try? await session.data(for: req),
+              let http = response as? HTTPURLResponse,
+              (200...299).contains(http.statusCode),
+              let jsonObj = try? JSONSerialization.jsonObject(with: data),
+              let prettyData = try? JSONSerialization.data(withJSONObject: jsonObj, options: [.prettyPrinted, .sortedKeys]),
+              let str = String(data: prettyData, encoding: .utf8) else {
+            return nil
+        }
+        return str
+    }
+
+    public func pingDiagnostics() async -> (ping: MarketplaceDiagnosticsPingResponse?, latencyMs: Int) {
+        let start = Date()
+        let resp: MarketplaceDiagnosticsPingResponse? = try? await getJSON(path: "api/mobile/v1/diagnostics/ping?app=marketplace")
+        let ms = max(1, Int(Date().timeIntervalSince(start) * 1000))
+        return (resp, ms)
+    }
+
+    // MARK: - Helpers HTTP (Avec En-têtes d'Audit & Idempotence Non-Bloquants)
 
     private func getJSON<T: Decodable>(path: String) async throws -> T {
         let fullURL = URL(string: "\(baseURL.absoluteString)/\(path)") ?? baseURL.appendingPathComponent(path)
@@ -834,7 +948,9 @@ public actor LivriaMarketplaceAPIClient {
         req.httpMethod = "GET"
         req.timeoutInterval = 20
         req.setValue("Livria Marketplace", forHTTPHeaderField: "X-Viple-App-Name")
+        req.setValue("26.10", forHTTPHeaderField: "X-Viple-Client-Version")
         req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
+        req.setValue(UUID().uuidString, forHTTPHeaderField: "X-Viple-Request-Id")
         if let token = authToken, !token.isEmpty {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
@@ -852,7 +968,10 @@ public actor LivriaMarketplaceAPIClient {
         req.timeoutInterval = 20
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Livria Marketplace", forHTTPHeaderField: "X-Viple-App-Name")
+        req.setValue("26.10", forHTTPHeaderField: "X-Viple-Client-Version")
         req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
+        req.setValue(UUID().uuidString, forHTTPHeaderField: "X-Viple-Request-Id")
+        req.setValue(UUID().uuidString, forHTTPHeaderField: "X-Idempotency-Key")
         if let token = authToken, !token.isEmpty {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
@@ -871,7 +990,9 @@ public actor LivriaMarketplaceAPIClient {
         req.timeoutInterval = 20
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.setValue("Livria Marketplace", forHTTPHeaderField: "X-Viple-App-Name")
+        req.setValue("26.10", forHTTPHeaderField: "X-Viple-Client-Version")
         req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
+        req.setValue(UUID().uuidString, forHTTPHeaderField: "X-Viple-Request-Id")
         if let token = authToken, !token.isEmpty {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }

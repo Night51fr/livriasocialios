@@ -4,13 +4,30 @@ import SwiftUI
 
 public struct BookListsView: View {
     @EnvironmentObject private var social: LivriaSocialViewModel
-    @State private var selectedSegment: Int = 0 // 0 = Toutes les listes, 1 = Mes listes rémunérées
+    @State private var selectedSegment: Int = 0 // 0 = Toutes les listes, 1 = Mes listes rémunérées, 2 = Favoris
+    @State private var listSearchQuery: String = ""
     @State private var selectedListForAddBook: SocialBookListModel? = nil
 
     public init() {}
 
     private var displayedLists: [SocialBookListModel] {
-        selectedSegment == 0 ? social.lists : social.myLists
+        let base: [SocialBookListModel]
+        switch selectedSegment {
+        case 1:
+            base = social.myLists
+        case 2:
+            base = social.lists.filter { social.isListBookmarked($0.id) }
+        default:
+            base = social.lists
+        }
+        let q = listSearchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty else { return base }
+        return base.filter {
+            $0.title.localizedCaseInsensitiveContains(q) ||
+            $0.description.localizedCaseInsensitiveContains(q) ||
+            $0.creatorName.localizedCaseInsensitiveContains(q) ||
+            $0.books.contains(where: { $0.bookTitle.localizedCaseInsensitiveContains(q) })
+        }
     }
 
     public var body: some View {
@@ -21,11 +38,32 @@ public struct BookListsView: View {
 
                     SocialSegmentedPillBar(
                         items: [
-                            (0, "Toutes les listes (\(social.lists.count))", "sparkles"),
-                            (1, "Mes listes (\(social.myLists.count))", "folder.fill.badge.person.crop")
+                            (0, "Toutes (\(social.lists.count))", "sparkles"),
+                            (1, "Mes listes (\(social.myLists.count))", "folder.fill.badge.person.crop"),
+                            (2, "Favoris (\(social.bookmarkedListIds.count))", "bookmark.fill")
                         ],
                         selection: $selectedSegment
                     )
+
+                    HStack(spacing: 8) {
+                        Image(systemName: "magnifyingglass")
+                            .foregroundStyle(LivriaSocialPalette.gold)
+                        TextField("Rechercher une liste thématique, un créateur ou un livre...", text: $listSearchQuery)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.white)
+                        if !listSearchQuery.isEmpty {
+                            Button {
+                                listSearchQuery = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundStyle(LivriaSocialPalette.textMuted)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(11)
+                    .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.07)))
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(LivriaSocialPalette.border, lineWidth: 1))
 
                     if displayedLists.isEmpty {
                         VStack(spacing: 12) {
@@ -180,6 +218,7 @@ public struct BookListsView: View {
 // MARK: - Carte d'une Liste de Livres
 
 private struct BookListCardView: View {
+    @EnvironmentObject private var social: LivriaSocialViewModel
     let list: SocialBookListModel
     let isMine: Bool
     let onAddBook: () -> Void
@@ -224,6 +263,15 @@ private struct BookListCardView: View {
                 }
 
                 Spacer()
+
+                Button {
+                    social.toggleListBookmark(list.id)
+                } label: {
+                    Image(systemName: social.isListBookmarked(list.id) ? "bookmark.fill" : "bookmark")
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(social.isListBookmarked(list.id) ? LivriaSocialPalette.gold : LivriaSocialPalette.textMuted)
+                }
+                .buttonStyle(.plain)
 
                 if isMine {
                     Menu {
