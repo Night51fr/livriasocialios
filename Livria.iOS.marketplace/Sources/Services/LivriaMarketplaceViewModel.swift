@@ -15,7 +15,7 @@ public enum MarketplaceTab: Int, CaseIterable, Sendable {
     case profile = 4
 }
 
-// MARK: - ViewModel Principal Livria Marketplace (@MainActor)
+// MARK: - ViewModel Principal Livria Marketplace (@MainActor — 100% Données Réelles & Viple Live ID)
 
 @MainActor
 public final class LivriaMarketplaceViewModel: ObservableObject {
@@ -42,7 +42,7 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
     @Published public var sortOption: String = "Pertinence Livria"
     @Published public var showOnlyFavorites: Bool = false
 
-    // Données Marketplace
+    // Données Marketplace Réelles (Aucune donnée de démo)
     @Published public var listings: [MarketplaceListing] = []
     @Published public var conversations: [MarketplaceConversationPreview] = []
     @Published public var activeThreadMessages: [MarketplaceDirectMessage] = []
@@ -74,11 +74,11 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
 
     public init() {
         self.hasAcceptedTermsOfUse = UserDefaults.standard.bool(forKey: "livria_marketplace_cgu_accepted_v1")
-        self.listings = Self.defaultSeedListings()
-        self.relayPoints = Self.defaultSeedRelays()
-        self.selectedRelayPoint = self.relayPoints.first
-        self.conversations = Self.defaultSeedConversations()
-        self.offers = Self.defaultSeedOffers()
+        if let savedData = UserDefaults.standard.data(forKey: "livria_marketplace_viple_user_v1"),
+           let savedUser = try? JSONDecoder().decode(MarketplaceUserProfile.self, from: savedData) {
+            self.currentUser = savedUser
+            self.isAuthenticated = true
+        }
 
         Task {
             await bootstrap()
@@ -101,44 +101,39 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         do {
             let resp = try await LivriaMarketplaceAPIClient.shared.fetchBootstrap()
             isServerInMaintenanceOrDown = false
-            if !resp.listings.isEmpty {
-                self.listings = resp.listings
+            self.listings = resp.listings
+            self.conversations = resp.conversations
+            self.offers = resp.offers
+            self.orders = resp.orders
+            self.relayPoints = resp.relayPoints
+            if self.selectedRelayPoint == nil {
+                self.selectedRelayPoint = resp.relayPoints.first
             }
-            if !resp.conversations.isEmpty {
-                self.conversations = resp.conversations
-            }
-            if !resp.offers.isEmpty {
-                self.offers = resp.offers
-            }
-            if !resp.orders.isEmpty {
-                self.orders = resp.orders
-            }
-            if !resp.relayPoints.isEmpty {
-                self.relayPoints = resp.relayPoints
-                if self.selectedRelayPoint == nil {
-                    self.selectedRelayPoint = resp.relayPoints.first
-                }
-            }
-            if let taker = resp.takerApplication {
-                self.takerApplication = taker
-            }
-            if let user = resp.currentUser {
+            self.takerApplication = resp.takerApplication
+
+            if let user = resp.currentUser, user.numericUserId > 0 {
                 self.currentUser = user
                 self.isAuthenticated = true
+                await LivriaMarketplaceAPIClient.shared.setSession(
+                    token: await LivriaMarketplaceAPIClient.shared.getToken(),
+                    user: user
+                )
                 await LivriaMarketplaceAPIClient.shared.registerCrossAppSession(sourceApp: "Livria Marketplace")
-            } else {
+            } else if !self.isAuthenticated {
                 await checkCrossAppSingleSignOn()
             }
         } catch let MarketplaceServerError.maintenanceOrDown(msg) {
             self.serverMaintenanceMessage = msg
             self.isServerInMaintenanceOrDown = true
         } catch {
-            await checkCrossAppSingleSignOn()
+            if !self.isAuthenticated {
+                await checkCrossAppSingleSignOn()
+            }
         }
 
         let elapsed = Date().timeIntervalSince(startTime)
-        if elapsed < 1.35 {
-            try? await Task.sleep(nanoseconds: UInt64((1.35 - elapsed) * 1_000_000_000))
+        if elapsed < 1.25 {
+            try? await Task.sleep(nanoseconds: UInt64((1.25 - elapsed) * 1_000_000_000))
         }
         withAnimation(.easeInOut(duration: 0.35)) {
             isBootstrapping = false
@@ -206,12 +201,10 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
     }
 
     public var myListings: [MarketplaceListing] {
-        guard let username = currentUser?.username else {
-            return listings.filter { $0.sellerUsername == "vous.livria" }
-        }
+        guard let user = currentUser else { return [] }
         return listings.filter {
-            $0.sellerUsername.caseInsensitiveCompare(username) == .orderedSame ||
-            $0.sellerUsername == "vous.livria"
+            $0.sellerUsername.caseInsensitiveCompare(user.username) == .orderedSame ||
+            $0.sellerDisplayName.caseInsensitiveCompare(user.displayName) == .orderedSame
         }
     }
 
@@ -279,7 +272,7 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Authentification Viple Live ID & Cross-App SSO
+    // MARK: - Authentification Viple Live ID Réelle & Cross-App SSO
 
     public func checkCrossAppSingleSignOn() async {
         guard !isAuthenticated else { return }
@@ -297,14 +290,19 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
             isShowingCrossAppPrompt = false
             return
         }
-        if let token = discovered.token, !token.isEmpty {
-            await LivriaMarketplaceAPIClient.shared.setToken(token)
+        if let ssoResp = await LivriaMarketplaceAPIClient.shared.acceptCrossAppSession(user: user),
+           ssoResp.success,
+           let confirmedUser = ssoResp.user {
+            await LivriaMarketplaceAPIClient.shared.setSession(token: ssoResp.token, user: confirmedUser)
+            self.currentUser = confirmedUser
+        } else {
+            await LivriaMarketplaceAPIClient.shared.setSession(token: discovered.token, user: user)
+            self.currentUser = user
         }
-        self.currentUser = user
         self.isAuthenticated = true
         self.isShowingCrossAppPrompt = false
-        showToast("Connecté automatiquement en tant que \(user.displayName)")
-        await fetchTakerApplicationStatus()
+        showToast("Connecté via Viple Live ID (\(self.currentUser?.displayName ?? user.displayName))")
+        await bootstrap()
     }
 
     public func declineCrossAppSingleSignOn() {
@@ -313,78 +311,65 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
     }
 
     public func signIn(emailOrUsername: String, password: String) async -> Bool {
+        let cleanEmail = emailOrUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanEmail.isEmpty, !password.isEmpty else {
+            showToast("Veuillez saisir votre e-mail Viple Live ID et votre mot de passe.")
+            return false
+        }
         do {
             let resp = try await LivriaMarketplaceAPIClient.shared.loginVipleLiveId(
-                emailOrUsername: emailOrUsername,
+                emailOrUsername: cleanEmail,
                 password: password
             )
             if resp.success, let user = resp.user {
-                await LivriaMarketplaceAPIClient.shared.setToken(resp.token)
+                await LivriaMarketplaceAPIClient.shared.setSession(token: resp.token, user: user)
                 await LivriaMarketplaceAPIClient.shared.registerCrossAppSession(sourceApp: "Livria Marketplace")
                 self.currentUser = user
                 self.isAuthenticated = true
                 self.isShowingAuthSheet = false
                 showToast("Bienvenue sur Livria Marketplace, \(user.displayName) !")
-                await fetchTakerApplicationStatus()
+                await bootstrap()
                 return true
             } else {
                 showToast(resp.message)
                 return false
             }
         } catch {
-            // Mode démo fluide si identifiants de test
-            let clean = emailOrUsername.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !clean.isEmpty, !password.isEmpty else { return false }
-            let username = clean.components(separatedBy: "@").first ?? clean
-            let user = MarketplaceUserProfile(
-                id: "VIPLE-\(UUID().uuidString.prefix(8))",
-                username: username.lowercased(),
-                displayName: username.capitalized,
-                email: clean.contains("@") ? clean : "\(username.lowercased())@viple.fr",
-                avatarUrl: nil,
-                bio: "Passionné de lecture et collectionneur sur Livria Marketplace.",
-                motto: "Membre Viple Live ID Vérifié",
-                level: 7,
-                xp: 640,
-                isLivriaPlus: true,
-                firstName: username.capitalized,
-                lastName: "Membre",
-                phone: "06 12 34 56 78",
-                address: "14 Place Stanislas",
-                postalCode: "54000",
-                city: "Nancy",
-                walletBalance: 24.00
-            )
-            let token = "viple-live-jwt-\(UUID().uuidString)"
-            await LivriaMarketplaceAPIClient.shared.setToken(token)
-            await LivriaMarketplaceAPIClient.shared.registerCrossAppSession(sourceApp: "Livria Marketplace")
-            self.currentUser = user
-            self.isAuthenticated = true
-            self.isShowingAuthSheet = false
-            showToast("Connecté à Viple Live ID (\(user.displayName))")
-            return true
+            showToast("Impossible de joindre le service d'authentification Viple Live ID.")
+            return false
         }
     }
 
     public func registerAccount(username: String, displayName: String, email: String, password: String) async -> Bool {
+        let cleanEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cleanEmail.isEmpty, !password.isEmpty else {
+            showToast("Veuillez renseigner tous les champs pour créer votre Viple Live ID.")
+            return false
+        }
         do {
             let resp = try await LivriaMarketplaceAPIClient.shared.registerVipleLiveId(
                 username: username,
-                displayName: displayName,
-                email: email,
+                displayName: displayName.isEmpty ? username : displayName,
+                email: cleanEmail,
                 password: password
             )
             if resp.success, let user = resp.user {
-                await LivriaMarketplaceAPIClient.shared.setToken(resp.token)
+                await LivriaMarketplaceAPIClient.shared.setSession(token: resp.token, user: user)
                 await LivriaMarketplaceAPIClient.shared.registerCrossAppSession(sourceApp: "Livria Marketplace")
                 self.currentUser = user
                 self.isAuthenticated = true
                 self.isShowingAuthSheet = false
                 showToast("Compte Viple Live ID créé avec succès !")
+                await bootstrap()
                 return true
+            } else {
+                showToast(resp.message)
+                return false
             }
-        } catch {}
-        return await signIn(emailOrUsername: email, password: password)
+        } catch {
+            showToast("Erreur lors de la création du compte Viple Live ID.")
+            return false
+        }
     }
 
     public func signInWithApple(appleUserId: String, email: String?, fullName: String?, identityToken: String?) async {
@@ -396,34 +381,42 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
                 identityToken: identityToken
             )
             if resp.success, let user = resp.user {
-                await LivriaMarketplaceAPIClient.shared.setToken(resp.token)
+                await LivriaMarketplaceAPIClient.shared.setSession(token: resp.token, user: user)
                 await LivriaMarketplaceAPIClient.shared.registerCrossAppSession(sourceApp: "Livria Marketplace")
                 self.currentUser = user
                 self.isAuthenticated = true
                 self.isShowingAuthSheet = false
-                showToast("Connecté avec Apple & Viple Live ID")
-                return
+                showToast("Connecté avec Apple & Viple Live ID (\(user.displayName))")
+                await bootstrap()
+            } else {
+                showToast(resp.message)
             }
-        } catch {}
-        _ = await signIn(emailOrUsername: email ?? (fullName ?? "membre.apple"), password: appleUserId)
+        } catch {
+            showToast("Impossible de finaliser la connexion Apple / Viple Live ID.")
+        }
     }
 
     public func signOut() {
         Task {
             await LivriaMarketplaceAPIClient.shared.clearCrossAppSession()
-            await LivriaMarketplaceAPIClient.shared.setToken(nil)
+            await LivriaMarketplaceAPIClient.shared.setSession(token: nil, user: nil)
         }
         self.currentUser = nil
         self.isAuthenticated = false
+        self.conversations = []
+        self.orders = []
+        self.takerApplication = nil
         showToast("Déconnecté de Viple Live ID")
     }
 
     public func deleteVipleAccount() async -> Bool {
         let ok = await LivriaMarketplaceAPIClient.shared.deleteAccount()
         await LivriaMarketplaceAPIClient.shared.clearCrossAppSession()
-        await LivriaMarketplaceAPIClient.shared.setToken(nil)
+        await LivriaMarketplaceAPIClient.shared.setSession(token: nil, user: nil)
         self.currentUser = nil
         self.isAuthenticated = false
+        self.conversations = []
+        self.orders = []
         self.takerApplication = nil
         showToast("Votre compte Viple Live ID et vos données ont été supprimés.")
         return ok
@@ -432,27 +425,34 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
     // MARK: - Upload & Recadrage Photo de Profil Viple Live ID
 
     public func uploadCroppedAvatar(jpegData: Data) async -> Bool {
+        guard isAuthenticated else {
+            showToast("Connectez-vous à votre Viple Live ID pour modifier votre photo.")
+            return false
+        }
         if let uploadedUrl = await LivriaMarketplaceAPIClient.shared.uploadCroppedAvatar(jpegData: jpegData) {
             if var u = currentUser {
                 u.avatarUrl = uploadedUrl
                 currentUser = u
+                await LivriaMarketplaceAPIClient.shared.setSession(
+                    token: await LivriaMarketplaceAPIClient.shared.getToken(),
+                    user: u
+                )
             }
-            showToast("Photo de profil recadrée et mise à jour !")
+            showToast("Photo de profil recadrée et synchronisée sur Viple Live ID !")
             return true
         }
-        // Fallback local data URL si hors-ligne
-        let dataUrl = "data:image/jpeg;base64,\(jpegData.base64EncodedString())"
-        if var u = currentUser {
-            u.avatarUrl = dataUrl
-            currentUser = u
-        }
-        showToast("Photo de profil recadrée enregistrée !")
-        return true
+        showToast("Impossible de téléverser la photo de profil sur le serveur.")
+        return false
     }
 
     // MARK: - Création, Modification, Suppression & Favoris d'Annonces
 
     public func toggleFavorite(for listing: MarketplaceListing) {
+        guard isAuthenticated else {
+            showToast("Connectez-vous avec Viple Live ID pour ajouter des favoris.")
+            isShowingAuthSheet = true
+            return
+        }
         guard let idx = listings.firstIndex(where: { $0.id == listing.id }) else { return }
         listings[idx].isFavorited.toggle()
         let isFav = listings[idx].isFavorited
@@ -482,12 +482,12 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         clothingSize: String?,
         allowsOffers: Bool
     ) async -> MarketplaceListing {
-        let sellerUsername = currentUser?.username ?? "vous.livria"
-        let sellerDisplayName = currentUser?.displayName ?? "Vous (Membre Livria)"
-        let sellerCity = "\(currentUser?.city ?? "Nancy") (\(currentUser?.postalCode ?? "54000"))"
+        let sellerUsername = currentUser?.username ?? "membre"
+        let sellerDisplayName = currentUser?.displayName ?? "Membre Livria"
+        let sellerCity = currentUser.map { $0.city.isEmpty ? "France" : "\($0.city) (\($0.postalCode))" } ?? "France"
 
         let item = MarketplaceListing(
-            id: existingId ?? "MKT-\(Int.random(in: 100000...999999))",
+            id: existingId ?? "0",
             title: title,
             subtitle: subtitle.isEmpty ? subcategory : subtitle,
             description: description,
@@ -498,7 +498,7 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
             originalRetailPrice: originalRetailPrice,
             livriaCommission: 1.00,
             shippingFee: 0.00,
-            photos: photos.isEmpty ? ["https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=900&q=80"] : photos,
+            photos: photos,
             isbn: isbn,
             authorOrArtist: authorOrArtist,
             publisherOrBrand: publisherOrBrand,
@@ -507,12 +507,12 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
             sellerUsername: sellerUsername,
             sellerDisplayName: sellerDisplayName,
             sellerAvatarUrl: currentUser?.avatarUrl,
-            sellerLevel: currentUser?.level ?? 7,
+            sellerLevel: currentUser?.level ?? 1,
             sellerRating: 5.0,
-            sellerSalesCount: 14,
+            sellerSalesCount: 1,
             sellerCity: sellerCity,
             isVipleVerified: true,
-            favoritesCount: existingId != nil ? (listings.first(where: { $0.id == existingId })?.favoritesCount ?? 1) : 0,
+            favoritesCount: existingId != nil ? (listings.first(where: { $0.id == existingId })?.favoritesCount ?? 1) : 1,
             isFavorited: false,
             isSold: false,
             allowsOffers: allowsOffers,
@@ -520,21 +520,23 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         )
 
         if let existingId, let idx = listings.firstIndex(where: { $0.id == existingId }) {
-            listings[idx] = item
             if let remote = try? await LivriaMarketplaceAPIClient.shared.updateListing(item) {
                 listings[idx] = remote
+                showToast("Votre annonce « \(remote.title) » a été mise à jour !")
+                return remote
             }
+            listings[idx] = item
             showToast("Votre annonce « \(item.title) » a été mise à jour !")
+            return item
         } else {
-            listings.insert(item, at: 0)
             if let remote = try? await LivriaMarketplaceAPIClient.shared.createListing(item) {
-                if let idx = listings.firstIndex(where: { $0.id == item.id }) {
-                    listings[idx] = remote
-                }
+                listings.insert(remote, at: 0)
+                showToast("Annonce « \(remote.title) » publiée sur Livria Marketplace !")
+                return remote
             }
-            showToast("Annonce « \(item.title) » publiée sur Livria Marketplace !")
+            showToast("Erreur lors de la publication sur le serveur.")
+            return item
         }
-        return item
     }
 
     public func deleteListing(_ listing: MarketplaceListing) async {
@@ -543,117 +545,42 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         showToast("Annonce « \(listing.title) » supprimée")
     }
 
-    // MARK: - Lookup ISBN Automatique pour la Création d'Annonce Livre
+    // MARK: - Lookup ISBN Réel (Catalogue Livria + Google Books)
 
-    public func lookupBookByISBN(_ rawISBN: String) -> MarketplaceISBNLookupResult {
-        let clean = rawISBN.replacingOccurrences(of: "-", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
-        switch clean {
-        case "9782070368228", "9782070413119":
-            return MarketplaceISBNLookupResult(
-                isbn: clean,
-                title: "1984 — Édition Folio Collector",
-                author: "George Orwell",
-                publisher: "Gallimard Folio",
-                releaseYear: "2021",
-                suggestedPrice: 6.50,
-                originalRetailPrice: 9.80,
-                subcategory: "Science-Fiction & Fantasy",
-                coverUrl: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=900&q=80",
-                summary: "Chef-d'œuvre de la dystopie moderne, édition française intégrale en excellent état."
-            )
-        case "9782253004226":
-            return MarketplaceISBNLookupResult(
-                isbn: clean,
-                title: "L'Étranger",
-                author: "Albert Camus",
-                publisher: "Folio Gallimard",
-                releaseYear: "2020",
-                suggestedPrice: 5.00,
-                originalRetailPrice: 8.40,
-                subcategory: "Romans & Littérature",
-                coverUrl: "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=900&q=80",
-                summary: "Édition brochée impeccable, pages non annotées."
-            )
-        default:
-            return MarketplaceISBNLookupResult(
-                isbn: clean.isEmpty ? "9782266286268" : clean,
-                title: "Dune — Tome 1 (Édition Collector Pocket)",
-                author: "Frank Herbert",
-                publisher: "Robert Laffont / Pocket",
-                releaseYear: "2023",
-                suggestedPrice: 8.50,
-                originalRetailPrice: 12.90,
-                subcategory: "Science-Fiction & Fantasy",
-                coverUrl: "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=900&q=80",
-                summary: "Roman culte de science-fiction reconnu par le scanner ISBN Livria Marketplace."
-            )
-        }
+    public func lookupBookByISBNAsync(_ rawISBN: String) async -> MarketplaceISBNLookupResult? {
+        return await LivriaMarketplaceAPIClient.shared.lookupISBN(rawISBN)
     }
 
     // MARK: - Faire une Offre & Partager une Annonce en Message
 
     public func submitPriceOffer(for listing: MarketplaceListing, offeredPrice: Double, message: String) async {
-        let buyerUsername = currentUser?.username ?? "vous.livria"
-        let buyerDisplayName = currentUser?.displayName ?? "Vous"
+        guard isAuthenticated else {
+            showToast("Connectez-vous avec Viple Live ID pour faire une offre.")
+            isShowingAuthSheet = true
+            return
+        }
         let cleanMsg = message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "Bonjour ! Je vous propose une offre à \(String(format: "%.2f", offeredPrice)) € (+ 1,00 € Garantie Livria, livraison 0 €)."
+            ? "Proposition d'achat à \(String(format: "%.2f", offeredPrice)) € (+ 1,00 € Garantie et Maintien du service Livria, livraison 0 €)."
             : message
 
-        let localOffer = MarketplaceOffer(
-            id: "OFF-\(Int.random(in: 10000...99999))",
-            listingId: listing.id,
-            listingTitle: listing.title,
-            listingPhoto: listing.photos.first ?? "",
-            listingOriginalPrice: listing.price,
-            buyerUsername: buyerUsername,
-            buyerDisplayName: buyerDisplayName,
-            buyerAvatarUrl: currentUser?.avatarUrl,
-            sellerUsername: listing.sellerUsername,
-            offeredPrice: offeredPrice,
-            livriaCommission: 1.00,
-            shippingFee: 0.00,
-            message: cleanMsg,
-            status: "En attente",
-            createdAtDisplay: "À l'instant"
-        )
-        offers.insert(localOffer, at: 0)
-
-        // Met à jour ou crée la conversation associée à l'annonce
-        let convId = ensureConversation(for: listing)
-        if let idx = conversations.firstIndex(where: { $0.id == convId }) {
-            conversations[idx].lastMessagePreview = "🏷️ Offre proposée : \(String(format: "%.2f €", offeredPrice))"
-            conversations[idx].lastMessageAt = "À l'instant"
-            conversations[idx].latestOfferPrice = offeredPrice
-            conversations[idx].latestOfferStatus = "En attente"
+        do {
+            let (remoteOffer, remoteConvId) = try await LivriaMarketplaceAPIClient.shared.createOffer(
+                listingId: listing.id,
+                offeredPrice: offeredPrice,
+                message: cleanMsg
+            )
+            if let remoteOffer {
+                offers.insert(remoteOffer, at: 0)
+            }
+            await bootstrap()
+            if let remoteConvId,
+               let conv = conversations.first(where: { $0.id == remoteConvId }) {
+                await loadMessages(for: conv)
+            }
+            showToast("Offre de \(String(format: "%.2f €", offeredPrice)) envoyée à @\(listing.sellerUsername) !")
+        } catch {
+            showToast("Impossible d'envoyer l'offre pour le moment.")
         }
-
-        let dm = MarketplaceDirectMessage(
-            id: "MSG-\(UUID().uuidString.prefix(8))",
-            conversationId: convId,
-            listingId: listing.id,
-            senderUsername: buyerUsername,
-            senderDisplayName: buyerDisplayName,
-            senderAvatarUrl: currentUser?.avatarUrl,
-            text: cleanMsg,
-            imageUrl: nil,
-            gifUrl: nil,
-            audioUrl: nil,
-            audioDurationSeconds: nil,
-            offerId: localOffer.id,
-            offerAmount: offeredPrice,
-            offerStatus: "En attente",
-            sentAtDisplay: "À l'instant",
-            isFromMe: true
-        )
-        activeThreadMessages.append(dm)
-
-        _ = try? await LivriaMarketplaceAPIClient.shared.createOffer(
-            listingId: listing.id,
-            offeredPrice: offeredPrice,
-            message: cleanMsg
-        )
-
-        showToast("Offre de \(String(format: "%.2f €", offeredPrice)) envoyée à @\(listing.sellerUsername) !")
     }
 
     public func respondToOffer(messageId: String, offerId: String?, accept: Bool) async {
@@ -676,7 +603,7 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
             return existing.id
         }
         let newConv = MarketplaceConversationPreview(
-            id: "CONV-\(listing.id)",
+            id: "0",
             listingId: listing.id,
             listingTitle: listing.title,
             listingPhoto: listing.photos.first ?? "",
@@ -687,7 +614,7 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
             otherDisplayName: listing.sellerDisplayName,
             otherAvatarUrl: listing.sellerAvatarUrl,
             otherLevel: listing.sellerLevel,
-            lastMessagePreview: "Discussion ouverte concernant « \(listing.title) »",
+            lastMessagePreview: "Nouvelle discussion concernant « \(listing.title) »",
             lastMessageAt: "À l'instant",
             unreadCount: 0,
             latestOfferPrice: nil,
@@ -701,50 +628,11 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         if let idx = conversations.firstIndex(where: { $0.id == conversation.id }) {
             conversations[idx].unreadCount = 0
         }
-        if let remote = try? await LivriaMarketplaceAPIClient.shared.fetchConversationThread(conversationId: conversation.id),
-           !remote.messages.isEmpty {
+        if let remote = try? await LivriaMarketplaceAPIClient.shared.fetchConversationThread(conversationId: conversation.id) {
             self.activeThreadMessages = remote.messages
-            return
+        } else {
+            self.activeThreadMessages = []
         }
-        // Messages par défaut réalistes pour la conversation sélectionnée
-        self.activeThreadMessages = [
-            MarketplaceDirectMessage(
-                id: "SEED-1-\(conversation.id)",
-                conversationId: conversation.id,
-                listingId: conversation.listingId,
-                senderUsername: conversation.otherUsername,
-                senderDisplayName: conversation.otherDisplayName,
-                senderAvatarUrl: conversation.otherAvatarUrl,
-                text: "Bonjour ! L'article « \(conversation.listingTitle) » est bien disponible et prêt à être expédié via UPS ou remis en Point Relais Viple Taker (0 € de frais de port).",
-                imageUrl: nil,
-                gifUrl: nil,
-                audioUrl: nil,
-                audioDurationSeconds: nil,
-                offerId: nil,
-                offerAmount: nil,
-                offerStatus: nil,
-                sentAtDisplay: "Hier à 18:40",
-                isFromMe: false
-            ),
-            MarketplaceDirectMessage(
-                id: "SEED-2-\(conversation.id)",
-                conversationId: conversation.id,
-                listingId: conversation.listingId,
-                senderUsername: conversation.otherUsername,
-                senderDisplayName: conversation.otherDisplayName,
-                senderAvatarUrl: conversation.otherAvatarUrl,
-                text: conversation.lastMessagePreview,
-                imageUrl: nil,
-                gifUrl: nil,
-                audioUrl: nil,
-                audioDurationSeconds: nil,
-                offerId: conversation.latestOfferPrice != nil ? "OFF-SEED" : nil,
-                offerAmount: conversation.latestOfferPrice,
-                offerStatus: conversation.latestOfferStatus,
-                sentAtDisplay: conversation.lastMessageAt,
-                isFromMe: false
-            )
-        ]
     }
 
     public func sendMessage(
@@ -756,7 +644,12 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         audioDurationSeconds: Int? = nil,
         offerAmount: Double? = nil
     ) async {
-        let senderUsername = currentUser?.username ?? "vous.livria"
+        guard isAuthenticated else {
+            showToast("Connectez-vous avec Viple Live ID pour envoyer un message.")
+            isShowingAuthSheet = true
+            return
+        }
+        let senderUsername = currentUser?.username ?? "membre"
         let senderDisplayName = currentUser?.displayName ?? "Vous"
 
         let localMsg = MarketplaceDirectMessage(
@@ -771,7 +664,7 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
             gifUrl: gifUrl,
             audioUrl: audioUrl,
             audioDurationSeconds: audioDurationSeconds,
-            offerId: offerAmount != nil ? "OFF-\(Int.random(in: 1000...9999))" : nil,
+            offerId: nil,
             offerAmount: offerAmount,
             offerStatus: offerAmount != nil ? "En attente" : nil,
             sentAtDisplay: "À l'instant",
@@ -779,24 +672,7 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         )
         activeThreadMessages.append(localMsg)
 
-        if let idx = conversations.firstIndex(where: { $0.id == conversation.id }) {
-            if let offerAmount {
-                conversations[idx].lastMessagePreview = "🏷️ Offre : \(String(format: "%.2f €", offerAmount))"
-                conversations[idx].latestOfferPrice = offerAmount
-                conversations[idx].latestOfferStatus = "En attente"
-            } else if audioUrl != nil {
-                conversations[idx].lastMessagePreview = "🎤 Message vocal (\(audioDurationSeconds ?? 3)s)"
-            } else if gifUrl != nil {
-                conversations[idx].lastMessagePreview = "🎬 GIF animé envoyé"
-            } else if imageUrl != nil {
-                conversations[idx].lastMessagePreview = "📷 Photo envoyée"
-            } else {
-                conversations[idx].lastMessagePreview = text
-            }
-            conversations[idx].lastMessageAt = "À l'instant"
-        }
-
-        _ = try? await LivriaMarketplaceAPIClient.shared.sendDirectMessage(
+        if let (remoteMsg, remoteConvId) = try? await LivriaMarketplaceAPIClient.shared.sendDirectMessage(
             conversationId: conversation.id,
             listingId: conversation.listingId,
             recipientUsername: conversation.otherUsername,
@@ -806,7 +682,16 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
             audioUrl: audioUrl,
             audioDurationSeconds: audioDurationSeconds,
             offerAmount: offerAmount
-        )
+        ) {
+            if let remoteMsg, let idx = activeThreadMessages.firstIndex(where: { $0.id == localMsg.id }) {
+                activeThreadMessages[idx] = remoteMsg
+            }
+            if let remoteConvId, let cIdx = conversations.firstIndex(where: { $0.id == conversation.id }) {
+                conversations[cIdx].id = remoteConvId
+                conversations[cIdx].lastMessagePreview = remoteMsg?.text ?? text
+                conversations[cIdx].lastMessageAt = "À l'instant"
+            }
+        }
     }
 
     public func shareListingInInternalMessage(_ listing: MarketplaceListing, toRecipient recipientUsername: String, personalNote: String) async {
@@ -939,65 +824,38 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
         paymentMethod: String,
         deliveryMode: String,
         relay: MarketplaceRelayPoint?
-    ) async -> MarketplaceOrder {
-        let finalItemPrice = agreedPrice ?? listing.price
-        let commission = 1.00
-        let shipping = 0.00
-        let total = finalItemPrice + commission + shipping
+    ) async -> MarketplaceOrder? {
+        guard isAuthenticated else {
+            showToast("Connectez-vous avec votre Viple Live ID pour finaliser l'achat.")
+            isShowingAuthSheet = true
+            return nil
+        }
 
+        let finalItemPrice = agreedPrice ?? listing.price
         let selectedRelay = relay ?? selectedRelayPoint ?? relayPoints.first
         let isTaker = selectedRelay?.isParticulierTaker ?? false
 
-        if let remoteOrder = try? await LivriaMarketplaceAPIClient.shared.checkoutListing(
-            listingId: listing.id,
-            agreedPrice: finalItemPrice,
-            paymentMethod: paymentMethod,
-            deliveryMode: deliveryMode,
-            relayId: selectedRelay?.id,
-            relayName: selectedRelay?.name,
-            relayAddress: selectedRelay.map { "\($0.address), \($0.postalCode) \($0.city)" },
-            isVipleTakerRelay: isTaker
-        ) {
+        do {
+            let remoteOrder = try await LivriaMarketplaceAPIClient.shared.checkoutListing(
+                listingId: listing.id,
+                agreedPrice: finalItemPrice,
+                paymentMethod: paymentMethod,
+                deliveryMode: deliveryMode,
+                relayId: selectedRelay?.id,
+                relayName: selectedRelay?.name,
+                relayAddress: selectedRelay.map { "\($0.address), \($0.postalCode) \($0.city)" },
+                isVipleTakerRelay: isTaker
+            )
             orders.insert(remoteOrder, at: 0)
             if let idx = listings.firstIndex(where: { $0.id == listing.id }) {
                 listings[idx].isSold = true
             }
             showToast("Commande \(remoteOrder.orderNumber) confirmée via \(paymentMethod) !")
             return remoteOrder
+        } catch {
+            showToast("Impossible de valider la commande sur le serveur.")
+            return nil
         }
-
-        let fallbackOrder = MarketplaceOrder(
-            id: "ORD-\(UUID().uuidString.prefix(8))",
-            orderNumber: "LVM-\(Int.random(in: 100000...999999))",
-            listingId: listing.id,
-            listingTitle: listing.title,
-            listingPhoto: listing.photos.first ?? "",
-            category: listing.category,
-            buyerUsername: currentUser?.username ?? "vous.livria",
-            sellerUsername: listing.sellerUsername,
-            itemPrice: finalItemPrice,
-            livriaCommission: commission,
-            shippingFee: shipping,
-            totalPaid: total,
-            paymentMethod: paymentMethod,
-            deliveryMode: deliveryMode,
-            relayId: selectedRelay?.id,
-            relayName: selectedRelay?.name,
-            relayAddress: selectedRelay.map { "\($0.address), \($0.postalCode) \($0.city)" },
-            isVipleTakerRelay: isTaker,
-            upsTrackingNumber: "1Z999AA101\(Int.random(in: 10000000...99999999))",
-            vipleDeliveryBarcode: "VIPLE-DLV-\(Int.random(in: 100000...999999))",
-            status: isTaker
-                ? "Expédié (Viple Delivery / UPS) • Scan Looby Taker attendu (1,00 € Taker)"
-                : "Étiquette UPS générée • En transit vers le point relais",
-            createdAtDisplay: "À l'instant"
-        )
-        orders.insert(fallbackOrder, at: 0)
-        if let idx = listings.firstIndex(where: { $0.id == listing.id }) {
-            listings[idx].isSold = true
-        }
-        showToast("Commande \(fallbackOrder.orderNumber) validée (\(String(format: "%.2f €", total))) !")
-        return fallbackOrder
     }
 
     // MARK: - Recherche Points Relais UPS & Viple Taker
@@ -1010,15 +868,16 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
                 self.selectedRelayPoint = found.first
             }
             showToast("\(found.count) points relais UPS & Viple Taker trouvés")
+        } else {
+            showToast("Aucun point relais trouvé pour ce secteur.")
         }
     }
 
     // MARK: - Candidature & Suivi « Devenir Viple Taker » (1,00 € / colis)
 
     public func fetchTakerApplicationStatus() async {
-        if let resp = try? await LivriaMarketplaceAPIClient.shared.fetchTakerStatus(),
-           let app = resp.application {
-            self.takerApplication = app
+        if let resp = try? await LivriaMarketplaceAPIClient.shared.fetchTakerStatus() {
+            self.takerApplication = resp.application
         }
     }
 
@@ -1057,36 +916,8 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
             showToast(resp.message ?? "Demande Viple Taker transmise à /admin Livria !")
             return resp.ok
         } catch {
-            let now = ISO8601DateFormatter().string(from: Date())
-            self.takerApplication = MarketplaceVipleTakerApplication(
-                id: takerApplication?.id ?? "TAKER-\(Int.random(in: 10000...99999))",
-                userId: currentUser?.id ?? "GUEST",
-                username: currentUser?.username ?? "membre.livria",
-                fullName: fullName,
-                email: email,
-                phone: phone,
-                streetAddress: streetAddress,
-                postalCode: postalCode,
-                city: city,
-                availabilityHours: availabilityHours,
-                storageCapacityParcels: storageCapacityParcels,
-                housingType: housingType,
-                motivation: motivation,
-                acceptsCharter: acceptsCharter,
-                status: additionalReply != nil ? "Vu par Viple, en cours de traitement" : "Envoyée",
-                requestedAdditionalInfo: nil,
-                applicantAdditionalReply: additionalReply,
-                adminComment: nil,
-                relayPointId: nil,
-                loobyTakerCode: "LT-\(postalCode)-\(Int.random(in: 100...999))",
-                remunerationPerParcel: 1.00,
-                parcelsDeliveredCount: 0,
-                totalEarnedEuros: 0.0,
-                createdAt: now,
-                updatedAt: now
-            )
-            showToast("Demande Viple Taker enregistrée !")
-            return true
+            showToast("Impossible d'envoyer la demande Viple Taker au serveur.")
+            return false
         }
     }
 
@@ -1111,482 +942,5 @@ public final class LivriaMarketplaceViewModel: ObservableObject {
                 }
             }
         }
-    }
-
-    // MARK: - Seed Data Complète (Livres en priorité, puis CD/DVD, Accessoires, Vêtements)
-
-    public static func defaultSeedListings() -> [MarketplaceListing] {
-        [
-            // 1. LIVRES (Priorité N°1 Livria)
-            MarketplaceListing(
-                id: "MKT-BOOK-101",
-                title: "Dune — Coffret Collector Intégrale Cycle de Dune (Tomes 1 à 3)",
-                subtitle: "Frank Herbert • Édition Collector reliée Robert Laffont",
-                description: "Coffret collector illustré comprenant les tomes 1 à 3 du Cycle de Dune de Frank Herbert. Tranche dorée, marque-page tissu intégré, lu une seule fois avec grand soin. Envoi protégé sous papier bulle via UPS ou remise en Point Relais Viple Taker.",
-                category: "books",
-                subcategory: "Science-Fiction & Fantasy",
-                condition: "Comme neuf",
-                price: 24.00,
-                originalRetailPrice: 45.00,
-                livriaCommission: 1.00,
-                shippingFee: 0.00,
-                photos: [
-                    "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=900&q=80",
-                    "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=900&q=80",
-                    "https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=900&q=80"
-                ],
-                isbn: "9782221252055",
-                authorOrArtist: "Frank Herbert",
-                publisherOrBrand: "Robert Laffont (Collection Ailleurs & Demain)",
-                releaseYear: "2023",
-                clothingSize: nil,
-                sellerUsername: "claire.bouquine",
-                sellerDisplayName: "Claire Bouquine",
-                sellerAvatarUrl: nil,
-                sellerLevel: 12,
-                sellerRating: 4.95,
-                sellerSalesCount: 47,
-                sellerCity: "Nancy (54000)",
-                isVipleVerified: true,
-                favoritesCount: 38,
-                isFavorited: true,
-                isSold: false,
-                allowsOffers: true,
-                createdAtDisplay: "Il y a 18 min"
-            ),
-            MarketplaceListing(
-                id: "MKT-BOOK-102",
-                title: "L'Ombre du Vent — Édition Grand Format Brochée",
-                subtitle: "Carlos Ruiz Zafón • Le Cimetière des Livres Oubliés",
-                description: "Roman incontournable de Carlos Ruiz Zafón dans la Barcelone de 1945. Couverture impeccable, aucun pli sur le dos. Idéal pour les amoureux de librairies secrètes.",
-                category: "books",
-                subcategory: "Romans & Littérature",
-                condition: "Très bon état",
-                price: 8.50,
-                originalRetailPrice: 21.90,
-                livriaCommission: 1.00,
-                shippingFee: 0.00,
-                photos: [
-                    "https://images.unsplash.com/photo-1543002588-bfa74002ed7e?w=900&q=80",
-                    "https://images.unsplash.com/photo-1524578271613-d550eacf6090?w=900&q=80",
-                    "https://images.unsplash.com/photo-1476275466078-4007374efbbe?w=900&q=80"
-                ],
-                isbn: "9782246670216",
-                authorOrArtist: "Carlos Ruiz Zafón",
-                publisherOrBrand: "Grasset",
-                releaseYear: "2021",
-                clothingSize: nil,
-                sellerUsername: "maxime.lecture",
-                sellerDisplayName: "Maxime Lecture",
-                sellerAvatarUrl: nil,
-                sellerLevel: 9,
-                sellerRating: 4.9,
-                sellerSalesCount: 29,
-                sellerCity: "Metz (57000)",
-                isVipleVerified: true,
-                favoritesCount: 24,
-                isFavorited: false,
-                isSold: false,
-                allowsOffers: true,
-                createdAtDisplay: "Il y a 42 min"
-            ),
-            MarketplaceListing(
-                id: "MKT-BOOK-103",
-                title: "One Piece — Coffret East Blue (Tomes 1 à 12) Édition Glénat",
-                subtitle: "Eiichiro Oda • Coffret Manga officiel illustré",
-                description: "Coffret complet des 12 premiers tomes de One Piece en édition originale Glénat. Les mangas sont en parfait état, conservés en bibliothèque à l'abri de la lumière.",
-                category: "books",
-                subcategory: "Manga & Bande Dessinée",
-                condition: "Comme neuf",
-                price: 49.00,
-                originalRetailPrice: 82.80,
-                livriaCommission: 1.00,
-                shippingFee: 0.00,
-                photos: [
-                    "https://images.unsplash.com/photo-1618519764620-7403abdbdfe9?w=900&q=80",
-                    "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=900&q=80"
-                ],
-                isbn: "9782344049020",
-                authorOrArtist: "Eiichiro Oda",
-                publisherOrBrand: "Glénat Manga",
-                releaseYear: "2023",
-                clothingSize: nil,
-                sellerUsername: "lucas.otaku54",
-                sellerDisplayName: "Lucas Manga",
-                sellerAvatarUrl: nil,
-                sellerLevel: 8,
-                sellerRating: 4.88,
-                sellerSalesCount: 19,
-                sellerCity: "Strasbourg (67000)",
-                isVipleVerified: true,
-                favoritesCount: 51,
-                isFavorited: false,
-                isSold: false,
-                allowsOffers: true,
-                createdAtDisplay: "Il y a 1 h"
-            ),
-            MarketplaceListing(
-                id: "MKT-BOOK-104",
-                title: "La Femme de Ménage — Thriller Best-Seller",
-                subtitle: "Freida McFadden • Édition J'ai Lu / City",
-                description: "Le thriller psychologique phénomène ! Lu en un week-end, état irréprochable comme en librairie.",
-                category: "books",
-                subcategory: "Polar & Thriller",
-                condition: "Comme neuf",
-                price: 5.50,
-                originalRetailPrice: 8.60,
-                livriaCommission: 1.00,
-                shippingFee: 0.00,
-                photos: [
-                    "https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=900&q=80",
-                    "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=900&q=80"
-                ],
-                isbn: "9782290391174",
-                authorOrArtist: "Freida McFadden",
-                publisherOrBrand: "J'ai Lu",
-                releaseYear: "2024",
-                clothingSize: nil,
-                sellerUsername: "sophie.polar",
-                sellerDisplayName: "Sophie Polar",
-                sellerAvatarUrl: nil,
-                sellerLevel: 11,
-                sellerRating: 5.0,
-                sellerSalesCount: 33,
-                sellerCity: "Reims (51100)",
-                isVipleVerified: true,
-                favoritesCount: 19,
-                isFavorited: false,
-                isSold: false,
-                allowsOffers: true,
-                createdAtDisplay: "Il y a 2 h"
-            ),
-
-            // 2. CD & DVD / BLU-RAY (Priorité N°2)
-            MarketplaceListing(
-                id: "MKT-CDDVD-201",
-                title: "Interstellar — Coffret Blu-Ray 4K Ultra HD + Bande Originale Hans Zimmer CD",
-                subtitle: "Christopher Nolan & Hans Zimmer • Édition Steelbook Collector",
-                description: "Coffret Steelbook comprenant le Blu-Ray 4K UHD du film Interstellar, le Blu-Ray bonus et le CD de la bande originale composée par Hans Zimmer + livret 24 pages.",
-                category: "cddvd",
-                subcategory: "Blu-Ray & 4K UHD",
-                condition: "Comme neuf",
-                price: 19.00,
-                originalRetailPrice: 34.99,
-                livriaCommission: 1.00,
-                shippingFee: 0.00,
-                photos: [
-                    "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=900&q=80",
-                    "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=900&q=80"
-                ],
-                isbn: nil,
-                authorOrArtist: "Christopher Nolan / Hans Zimmer",
-                publisherOrBrand: "Warner Bros. Home Entertainment",
-                releaseYear: "2022",
-                clothingSize: nil,
-                sellerUsername: "thomas.cinema",
-                sellerDisplayName: "Thomas Ciné",
-                sellerAvatarUrl: nil,
-                sellerLevel: 10,
-                sellerRating: 4.92,
-                sellerSalesCount: 22,
-                sellerCity: "Nancy (54000)",
-                isVipleVerified: true,
-                favoritesCount: 29,
-                isFavorited: true,
-                isSold: false,
-                allowsOffers: true,
-                createdAtDisplay: "Il y a 2 h"
-            ),
-            MarketplaceListing(
-                id: "MKT-CDDVD-202",
-                title: "Daft Punk — Random Access Memories (10th Anniversary Edition 2 CD)",
-                subtitle: "Album Double CD + Livret Studio Collector",
-                description: "Édition 10ème anniversaire en double CD incluant les 9 pistes inédites. Boîtier cristal et disques sans aucune rayure.",
-                category: "cddvd",
-                subcategory: "Albums CD",
-                condition: "Neuf avec étiquette / sous blister",
-                price: 12.00,
-                originalRetailPrice: 19.99,
-                livriaCommission: 1.00,
-                shippingFee: 0.00,
-                photos: [
-                    "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=900&q=80",
-                    "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=900&q=80"
-                ],
-                isbn: nil,
-                authorOrArtist: "Daft Punk",
-                publisherOrBrand: "Columbia / Sony Music",
-                releaseYear: "2023",
-                clothingSize: nil,
-                sellerUsername: "antoine.vinyle",
-                sellerDisplayName: "Antoine Audio",
-                sellerAvatarUrl: nil,
-                sellerLevel: 6,
-                sellerRating: 4.85,
-                sellerSalesCount: 15,
-                sellerCity: "Épinal (88000)",
-                isVipleVerified: true,
-                favoritesCount: 17,
-                isFavorited: false,
-                isSold: false,
-                allowsOffers: true,
-                createdAtDisplay: "Il y a 3 h"
-            ),
-
-            // 3. ACCESSOIRES & GOODIES (Priorité N°3)
-            MarketplaceListing(
-                id: "MKT-ACC-301",
-                title: "Mug Céramique Littéraire « Un Dernier Chapitre et Je Dors » + Marque-page",
-                subtitle: "Édition Officielle Livria • Céramique 350 ml & Dorure à chaud",
-                description: "Tasse de lecture en céramique épaisse (350 ml) accompagnée de son marque-page aimanté assorti. Jamais utilisée, vendue dans son coffret cadeau Livria.",
-                category: "accessories",
-                subcategory: "Tasses & Mugs",
-                condition: "Neuf avec étiquette / sous blister",
-                price: 9.50,
-                originalRetailPrice: 16.90,
-                livriaCommission: 1.00,
-                shippingFee: 0.00,
-                photos: [
-                    "https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?w=900&q=80",
-                    "https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=900&q=80"
-                ],
-                isbn: nil,
-                authorOrArtist: "Atelier Livria",
-                publisherOrBrand: "Livria Originals",
-                releaseYear: "2026",
-                clothingSize: nil,
-                sellerUsername: "elodie.deco",
-                sellerDisplayName: "Élodie Lecture",
-                sellerAvatarUrl: nil,
-                sellerLevel: 7,
-                sellerRating: 4.95,
-                sellerSalesCount: 18,
-                sellerCity: "Nancy (54000)",
-                isVipleVerified: true,
-                favoritesCount: 31,
-                isFavorited: false,
-                isSold: false,
-                allowsOffers: true,
-                createdAtDisplay: "Il y a 4 h"
-            ),
-            MarketplaceListing(
-                id: "MKT-ACC-302",
-                title: "Affiche d'Art « Les Grandes Librairies d'Europe » (50×70 cm) Papier Fine Art",
-                subtitle: "Illustration Architecturale • Papier Coton 250g/m²",
-                description: "Poster d'art imprimé sur papier Fine Art mat 250g représentant les plus belles librairies historiques. Expédié roulé dans un tube cartonné rigide via UPS ou Viple Taker.",
-                category: "accessories",
-                subcategory: "Affiches & Posters",
-                condition: "Comme neuf",
-                price: 14.00,
-                originalRetailPrice: 29.00,
-                livriaCommission: 1.00,
-                shippingFee: 0.00,
-                photos: [
-                    "https://images.unsplash.com/photo-1513519245088-0e12902e5a38?w=900&q=80",
-                    "https://images.unsplash.com/photo-1507842229356-51c61504d3ab?w=900&q=80"
-                ],
-                isbn: nil,
-                authorOrArtist: "Studio Beaux-Livres",
-                publisherOrBrand: "Éditions Graphiques",
-                releaseYear: "2025",
-                clothingSize: nil,
-                sellerUsername: "claire.bouquine",
-                sellerDisplayName: "Claire Bouquine",
-                sellerAvatarUrl: nil,
-                sellerLevel: 12,
-                sellerRating: 4.95,
-                sellerSalesCount: 47,
-                sellerCity: "Nancy (54000)",
-                isVipleVerified: true,
-                favoritesCount: 22,
-                isFavorited: false,
-                isSold: false,
-                allowsOffers: true,
-                createdAtDisplay: "Il y a 5 h"
-            ),
-
-            // 4. VÊTEMENTS (Priorité N°4)
-            MarketplaceListing(
-                id: "MKT-CLOTH-401",
-                title: "Sweat Brodé « Club des Lecteurs Nocturnes — Livria » Coton Bio",
-                subtitle: "Hoodie Unisexe • Coton Biologique 380g/m² • Couleur Crème & Violet",
-                description: "Sweat à capuche épais brodé sur la poitrine (« Club des Lecteurs Nocturnes — Livria »). Porté 2 fois, lavé à froid, état impeccable.",
-                category: "clothing",
-                subcategory: "Sweats & Hoodies littéraires",
-                condition: "Comme neuf",
-                price: 22.00,
-                originalRetailPrice: 49.00,
-                livriaCommission: 1.00,
-                shippingFee: 0.00,
-                photos: [
-                    "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=900&q=80",
-                    "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=900&q=80"
-                ],
-                isbn: nil,
-                authorOrArtist: "Collection Livria",
-                publisherOrBrand: "Livria Textile",
-                releaseYear: "2026",
-                clothingSize: "M (Unisexe)",
-                sellerUsername: "camille.style",
-                sellerDisplayName: "Camille Mode",
-                sellerAvatarUrl: nil,
-                sellerLevel: 8,
-                sellerRating: 4.9,
-                sellerSalesCount: 21,
-                sellerCity: "Metz (57000)",
-                isVipleVerified: true,
-                favoritesCount: 27,
-                isFavorited: false,
-                isSold: false,
-                allowsOffers: true,
-                createdAtDisplay: "Il y a 6 h"
-            )
-        ]
-    }
-
-    public static func defaultSeedConversations() -> [MarketplaceConversationPreview] {
-        [
-            MarketplaceConversationPreview(
-                id: "CONV-MKT-BOOK-101",
-                listingId: "MKT-BOOK-101",
-                listingTitle: "Dune — Coffret Collector Intégrale Cycle de Dune (Tomes 1 à 3)",
-                listingPhoto: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=900&q=80",
-                listingPrice: 24.00,
-                listingCategory: "books",
-                listingIsSold: false,
-                otherUsername: "claire.bouquine",
-                otherDisplayName: "Claire Bouquine",
-                otherAvatarUrl: nil,
-                otherLevel: 12,
-                lastMessagePreview: "Oui tout à fait ! Je peux déposer le coffret au Viple Taker de Nancy dès demain matin.",
-                lastMessageAt: "14:25",
-                unreadCount: 1,
-                latestOfferPrice: 22.00,
-                latestOfferStatus: "Acceptée"
-            ),
-            MarketplaceConversationPreview(
-                id: "CONV-MKT-CDDVD-201",
-                listingId: "MKT-CDDVD-201",
-                listingTitle: "Interstellar — Coffret Blu-Ray 4K Ultra HD + Bande Originale Hans Zimmer CD",
-                listingPhoto: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=900&q=80",
-                listingPrice: 19.00,
-                listingCategory: "cddvd",
-                listingIsSold: false,
-                otherUsername: "thomas.cinema",
-                otherDisplayName: "Thomas Ciné",
-                otherAvatarUrl: nil,
-                otherLevel: 10,
-                lastMessagePreview: "Le livret 24 pages et le CD Hans Zimmer sont bien inclus dans le Steelbook !",
-                lastMessageAt: "Hier",
-                unreadCount: 0,
-                latestOfferPrice: nil,
-                latestOfferStatus: nil
-            ),
-            MarketplaceConversationPreview(
-                id: "CONV-MKT-ACC-301",
-                listingId: "MKT-ACC-301",
-                listingTitle: "Mug Céramique Littéraire « Un Dernier Chapitre et Je Dors » + Marque-page",
-                listingPhoto: "https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?w=900&q=80",
-                listingPrice: 9.50,
-                listingCategory: "accessories",
-                listingIsSold: false,
-                otherUsername: "elodie.deco",
-                otherDisplayName: "Élodie Lecture",
-                otherAvatarUrl: nil,
-                otherLevel: 7,
-                lastMessagePreview: "🏷️ Offre proposée : 8,50 € (+ 1,00 € Garantie Livria, livraison 0 €)",
-                lastMessageAt: "Hier",
-                unreadCount: 0,
-                latestOfferPrice: 8.50,
-                latestOfferStatus: "En attente"
-            )
-        ]
-    }
-
-    public static func defaultSeedOffers() -> [MarketplaceOffer] {
-        [
-            MarketplaceOffer(
-                id: "OFF-101",
-                listingId: "MKT-BOOK-101",
-                listingTitle: "Dune — Coffret Collector Intégrale Cycle de Dune (Tomes 1 à 3)",
-                listingPhoto: "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=900&q=80",
-                listingOriginalPrice: 24.00,
-                buyerUsername: "vous.livria",
-                buyerDisplayName: "Vous",
-                buyerAvatarUrl: nil,
-                sellerUsername: "claire.bouquine",
-                offeredPrice: 22.00,
-                livriaCommission: 1.00,
-                shippingFee: 0.00,
-                message: "Bonjour Claire, accepteriez-vous 22,00 € pour le coffret Dune ?",
-                status: "Acceptée",
-                createdAtDisplay: "Aujourd'hui à 14:20"
-            )
-        ]
-    }
-
-    public static func defaultSeedRelays() -> [MarketplaceRelayPoint] {
-        [
-            MarketplaceRelayPoint(
-                id: "TAKER-NANCY-01",
-                name: "Viple Taker • Chez Marc L. (Point Relais Particulier Vérifié)",
-                address: "18 Rue Saint-Dizier",
-                postalCode: "54000",
-                city: "Nancy",
-                distanceKm: 0.4,
-                openingHours: "Lun-Sam 08h30-20h30 (Rendez-vous flexible Looby Taker)",
-                latitude: 48.6908,
-                longitude: 6.1832,
-                isAvailable: true,
-                isVipleTaker: true,
-                takerDisplayName: "Marc L.",
-                remunerationPerParcel: 1.00
-            ),
-            MarketplaceRelayPoint(
-                id: "TAKER-METZ-02",
-                name: "Viple Taker • Chez Amélie R. (Point Relais Particulier Vérifié)",
-                address: "9 Avenue Robert Schuman",
-                postalCode: "57000",
-                city: "Metz",
-                distanceKm: 1.1,
-                openingHours: "Lun-Dim 09h00-21h00 (Remise sur créneau convenu)",
-                latitude: 49.1160,
-                longitude: 6.1744,
-                isAvailable: true,
-                isVipleTaker: true,
-                takerDisplayName: "Amélie R.",
-                remunerationPerParcel: 1.00
-            ),
-            MarketplaceRelayPoint(
-                id: "UPS-NANCY-101",
-                name: "UPS Access Point • Librairie & Presse Stanislas",
-                address: "42 Rue des Dominicains",
-                postalCode: "54000",
-                city: "Nancy",
-                distanceKm: 0.6,
-                openingHours: "Lun-Sam 08h00-19h30",
-                latitude: 48.6921,
-                longitude: 6.1846,
-                isAvailable: true,
-                isVipleTaker: false,
-                takerDisplayName: nil,
-                remunerationPerParcel: 1.00
-            ),
-            MarketplaceRelayPoint(
-                id: "UPS-STRAS-204",
-                name: "UPS Access Point • Relais Kléber Culture",
-                address: "15 Place Kléber",
-                postalCode: "67000",
-                city: "Strasbourg",
-                distanceKm: 2.3,
-                openingHours: "Lun-Sam 08h30-20h00",
-                latitude: 48.5833,
-                longitude: 7.7458,
-                isAvailable: true,
-                isVipleTaker: false,
-                takerDisplayName: nil,
-                remunerationPerParcel: 1.00
-            )
-        ]
     }
 }

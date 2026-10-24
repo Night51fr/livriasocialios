@@ -141,7 +141,9 @@ public struct CreateOrEditListingView: View {
             }
             .sheet(isPresented: $isShowingISBNScanner) {
                 MarketplaceBarcodeScannerSheet { scannedISBN in
-                    applyISBNLookup(scannedISBN)
+                    Task {
+                        await applyISBNLookup(scannedISBN)
+                    }
                 }
             }
             #endif
@@ -161,47 +163,61 @@ public struct CreateOrEditListingView: View {
         }
     }
 
-    // MARK: - Barre de Progression des 4 Étapes
+    // MARK: - Barre de Progression des 4 Étapes (1, 2, 3, 4 en haut et mot entier en dessous)
 
     private var wizardStepHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                ForEach(1...4, id: \.self) { step in
-                    let isDone = step < currentStep
-                    let isCurrent = step == currentStep
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                            currentStep = step
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            ZStack {
-                                Circle()
-                                    .fill(isCurrent || isDone ? MarketplacePalette.primary : MarketplacePalette.primarySoft)
-                                    .frame(width: 26, height: 26)
-                                if isDone {
-                                    Image(systemName: "checkmark")
-                                        .font(.system(size: 11, weight: .black))
-                                        .foregroundStyle(.white)
-                                } else {
-                                    Text("\(step)")
-                                        .font(.system(size: 12, weight: .black, design: .rounded))
-                                        .foregroundStyle(isCurrent ? .white : MarketplacePalette.primary)
-                                }
-                            }
-                            if isCurrent {
-                                Text(stepTitle(for: step))
-                                    .font(.system(size: 12.5, weight: .black, design: .rounded))
-                                    .foregroundStyle(MarketplacePalette.ink)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-
-                    if step < 4 {
+        VStack(alignment: .leading, spacing: 12) {
+            ZStack(alignment: .top) {
+                // Ligne horizontale de liaison derrière les cercles 1 - 2 - 3 - 4
+                HStack(spacing: 0) {
+                    ForEach(1...3, id: \.self) { step in
                         Rectangle()
                             .fill(step < currentStep ? MarketplacePalette.primary : MarketplacePalette.border)
-                            .frame(height: 2)
+                            .frame(height: 2.5)
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+                .padding(.horizontal, 38)
+                .padding(.top, 15)
+
+                HStack(alignment: .top, spacing: 0) {
+                    ForEach(1...4, id: \.self) { step in
+                        let isDone = step < currentStep
+                        let isCurrent = step == currentStep
+                        Button {
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                                currentStep = step
+                            }
+                        } label: {
+                            VStack(spacing: 6) {
+                                ZStack {
+                                    Circle()
+                                        .fill(isCurrent || isDone ? MarketplacePalette.primary : MarketplacePalette.primarySoft)
+                                        .frame(width: 32, height: 32)
+                                        .overlay(
+                                            Circle()
+                                                .stroke(Color.white, lineWidth: 2)
+                                        )
+                                    if isDone {
+                                        Image(systemName: "checkmark")
+                                            .font(.system(size: 12, weight: .black))
+                                            .foregroundStyle(.white)
+                                    } else {
+                                        Text("\(step)")
+                                            .font(.system(size: 13.5, weight: .black, design: .rounded))
+                                            .foregroundStyle(isCurrent ? .white : MarketplacePalette.primary)
+                                    }
+                                }
+
+                                Text(stepTitle(for: step))
+                                    .font(.system(size: 12, weight: isCurrent ? .black : .semibold, design: .rounded))
+                                    .foregroundStyle(isCurrent ? MarketplacePalette.primary : (isDone ? MarketplacePalette.ink : MarketplacePalette.inkMuted))
+                                    .lineLimit(1)
+                                    .fixedSize(horizontal: true, vertical: false)
+                            }
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -215,10 +231,10 @@ public struct CreateOrEditListingView: View {
 
     private func stepTitle(for step: Int) -> String {
         switch step {
-        case 1: return "1. Rubrique"
-        case 2: return "2. Photos"
-        case 3: return "3. Description"
-        default: return "4. Prix & Envoi"
+        case 1: return "Rubrique"
+        case 2: return "Photos"
+        case 3: return "Description"
+        default: return "Prix & Envoi"
         }
     }
 
@@ -350,9 +366,11 @@ public struct CreateOrEditListingView: View {
                             .background(RoundedRectangle(cornerRadius: 12).fill(MarketplacePalette.background))
 
                         Button {
-                            applyISBNLookup(isbnCode.isEmpty ? "9782070368228" : isbnCode)
+                            Task {
+                                await applyISBNLookup(isbnCode)
+                            }
                         } label: {
-                            Text("Auto-remplir")
+                            Text("Rechercher ISBN")
                                 .font(.system(size: 12.5, weight: .bold))
                                 .padding(.horizontal, 12)
                                 .padding(.vertical, 11)
@@ -449,26 +467,15 @@ public struct CreateOrEditListingView: View {
             // Grille des photos ajoutées avec suppression & choix de la photo principale
             if uploadedPhotoUrls.isEmpty {
                 VStack(spacing: 10) {
-                    Image(systemName: "camera.Macro")
+                    Image(systemName: "camera.viewfinder")
                         .font(.system(size: 32, weight: .bold))
                         .foregroundStyle(MarketplacePalette.primary)
                     Text("Aucune photo importée pour le moment")
                         .font(.system(size: 14, weight: .bold))
-                    Text("Utilisez les boutons ci-dessus pour importer vos photos depuis votre iPhone, ou ajoutez un lot de photos de démonstration HD pour tester le carrousel swipeable.")
+                    Text("Utilisez les boutons ci-dessus pour importer et recadrer les photos réelles de votre article depuis votre iPhone.")
                         .font(.system(size: 11.5))
                         .foregroundStyle(MarketplacePalette.inkMuted)
                         .multilineTextAlignment(.center)
-
-                    Button {
-                        addDemoPackForCurrentCategory()
-                    } label: {
-                        Label("Ajouter 3 photos HD d'exemple (\(selectedCategory.title))", systemImage: "sparkles")
-                            .font(.system(size: 12.5, weight: .bold))
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 9)
-                            .background(Capsule().fill(MarketplacePalette.primarySoft))
-                            .foregroundStyle(MarketplacePalette.primary)
-                    }
                 }
                 .frame(maxWidth: .infinity)
                 .marketplaceCard(padding: 20)
@@ -813,49 +820,33 @@ public struct CreateOrEditListingView: View {
         allowsOffers = item.allowsOffers
     }
 
-    private func applyISBNLookup(_ rawISBN: String) {
-        let info = store.lookupBookByISBN(rawISBN)
+    private func applyISBNLookup(_ rawISBN: String) async {
+        let clean = rawISBN.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else {
+            store.showToast("Veuillez saisir ou scanner un numéro ISBN.")
+            return
+        }
+        guard let info = await store.lookupBookByISBNAsync(clean) else {
+            store.showToast("Aucun livre trouvé pour l'ISBN \(clean). Vous pouvez remplir les champs manuellement.")
+            return
+        }
         isbnCode = info.isbn
         selectedCategory = .books
         selectedSubcategory = info.subcategory
         title = info.title
-        subtitle = "\(info.author) • \(info.publisher)"
+        subtitle = info.publisher.isEmpty ? info.author : "\(info.author) • \(info.publisher)"
         authorOrArtist = info.author
         publisherOrBrand = info.publisher
         releaseYear = info.releaseYear
-        descriptionText = info.summary
+        if !info.summary.isEmpty {
+            descriptionText = info.summary
+        }
         priceString = String(format: "%.2f", info.suggestedPrice)
         retailPriceString = String(format: "%.2f", info.originalRetailPrice)
-        if !uploadedPhotoUrls.contains(info.coverUrl) {
+        if !info.coverUrl.isEmpty && !uploadedPhotoUrls.contains(info.coverUrl) {
             uploadedPhotoUrls.insert(info.coverUrl, at: 0)
         }
         store.showToast("Livre reconnu via ISBN \(info.isbn) !")
-    }
-
-    private func addDemoPackForCurrentCategory() {
-        switch selectedCategory {
-        case .books, .all:
-            uploadedPhotoUrls.append(contentsOf: [
-                "https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=900&q=80",
-                "https://images.unsplash.com/photo-1512820790803-83ca734da794?w=900&q=80",
-                "https://images.unsplash.com/photo-1495446815901-a7297e633e8d?w=900&q=80"
-            ])
-        case .cddvd:
-            uploadedPhotoUrls.append(contentsOf: [
-                "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=900&q=80",
-                "https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=900&q=80"
-            ])
-        case .accessories:
-            uploadedPhotoUrls.append(contentsOf: [
-                "https://images.unsplash.com/photo-1514228742587-6b1558fcca3d?w=900&q=80",
-                "https://images.unsplash.com/photo-1544787219-7f47ccb76574?w=900&q=80"
-            ])
-        case .clothing:
-            uploadedPhotoUrls.append(contentsOf: [
-                "https://images.unsplash.com/photo-1556905055-8f358a7a47b2?w=900&q=80",
-                "https://images.unsplash.com/photo-1521572267360-ee0c2909d518?w=900&q=80"
-            ])
-        }
     }
 
     private func handleMultiPhotosSelection(_ items: [PhotosPickerItem]) async {
@@ -899,16 +890,28 @@ public struct CreateOrEditListingView: View {
     }
 
     private func submitListing() async {
-        let finalTitle = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "Livre / Article Livria (\(selectedSubcategory))"
-            : title
-        let finalDesc = descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "Article vérifié en excellent état, expédition soignée via UPS ou Viple Taker (0 € de frais de livraison)."
-            : descriptionText
-
-        if uploadedPhotoUrls.isEmpty {
-            addDemoPackForCurrentCategory()
+        guard store.isAuthenticated else {
+            store.showToast("Connectez-vous avec votre compte Viple Live ID pour publier une annonce.")
+            store.isShowingAuthSheet = true
+            return
         }
+
+        let finalTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !finalTitle.isEmpty else {
+            store.showToast("Veuillez saisir le titre de votre annonce à l'étape 3.")
+            currentStep = 3
+            return
+        }
+
+        guard !uploadedPhotoUrls.isEmpty else {
+            store.showToast("Veuillez importer au moins une photo de votre article à l'étape 2.")
+            currentStep = 2
+            return
+        }
+
+        let finalDesc = descriptionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? finalTitle
+            : descriptionText
 
         _ = await store.publishOrUpdateListing(
             existingId: existingListing?.id,

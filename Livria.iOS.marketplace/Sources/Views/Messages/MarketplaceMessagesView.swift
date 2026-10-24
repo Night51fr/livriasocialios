@@ -55,13 +55,46 @@ public struct MarketplaceMessagesView: View {
 
                     // Liste des conversations :
                     // En 1er l'ANNONCE (en grand et gras), et juste en dessous en plus petit le PSEUDO !
-                    ForEach(filteredConversations) { conv in
-                        Button {
-                            selectedConversation = conv
-                        } label: {
-                            MarketplaceConversationRow(conversation: conv)
+                    if filteredConversations.isEmpty {
+                        VStack(spacing: 10) {
+                            Image(systemName: "bubble.left.and.bubble.right")
+                                .font(.system(size: 34, weight: .bold))
+                                .foregroundStyle(MarketplacePalette.primary)
+                            Text(store.isAuthenticated ? "Aucune conversation pour le moment" : "Connectez-vous à Viple Live ID")
+                                .font(.system(size: 15.5, weight: .black, design: .rounded))
+                                .foregroundStyle(MarketplacePalette.ink)
+                            Text(store.isAuthenticated
+                                 ? "Ouvrez une annonce et appuyez sur « Envoyer un message » ou « Faire une offre » pour démarrer une discussion."
+                                 : "Connectez-vous avec votre compte Viple Live ID pour retrouver vos messages et vos offres de prix.")
+                                .font(.system(size: 12.5))
+                                .foregroundStyle(MarketplacePalette.inkMuted)
+                                .multilineTextAlignment(.center)
+                            if !store.isAuthenticated {
+                                Button {
+                                    store.isShowingAuthSheet = true
+                                } label: {
+                                    Text("Se connecter avec Viple Live ID")
+                                        .font(.system(size: 13.5, weight: .bold, design: .rounded))
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 10)
+                                        .background(MarketplacePalette.heroGradient)
+                                        .foregroundStyle(.white)
+                                        .clipShape(Capsule())
+                                }
+                                .padding(.top, 4)
+                            }
                         }
-                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity)
+                        .marketplaceCard(padding: 24)
+                    } else {
+                        ForEach(filteredConversations) { conv in
+                            Button {
+                                selectedConversation = conv
+                            } label: {
+                                MarketplaceConversationRow(conversation: conv)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
                 .padding(16)

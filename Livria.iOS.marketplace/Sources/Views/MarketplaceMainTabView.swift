@@ -152,14 +152,7 @@ public struct MarketplaceMainTabView: View {
                     Image("LivriaMarketplaceLogoHorizontal")
                         .resizable()
                         .scaledToFit()
-                        .frame(height: 26)
-
-                    Text("1€ Garantie • 0€ Port")
-                        .font(.system(size: 9.5, weight: .black, design: .rounded))
-                        .padding(.horizontal, 7)
-                        .padding(.vertical, 3.5)
-                        .background(Capsule().fill(MarketplacePalette.primarySoft))
-                        .foregroundStyle(MarketplacePalette.primary)
+                        .frame(height: 28)
                 }
 
                 Spacer()

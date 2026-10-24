@@ -303,19 +303,40 @@ public struct MarketplaceExploreView: View {
                 }
             }
 
-            if category == .books {
-                // Pour les Livres (Priorité N°1), grille 2 colonnes mise en avant comme une vraie librairie
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 14) {
-                    ForEach(items) { listing in
-                        MarketplaceListingCard(
-                            listing: listing,
-                            onOpenDetail: { selectedListingForDetail = listing }
-                        )
-                        .environmentObject(store)
+            if items.isEmpty {
+                HStack(spacing: 12) {
+                    Image(systemName: category.icon)
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(MarketplacePalette.primary)
+                        .frame(width: 40, height: 40)
+                        .background(Circle().fill(MarketplacePalette.primarySoft))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Aucune annonce dans \(category.shortTitle) pour le moment")
+                            .font(.system(size: 13, weight: .bold, design: .rounded))
+                            .foregroundStyle(MarketplacePalette.ink)
+                        Text("Publiez la première annonce de cette rubrique en 4 étapes.")
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(MarketplacePalette.inkMuted)
+                    }
+
+                    Spacer()
+
+                    Button {
+                        store.editingListing = nil
+                        store.selectedTab = .sell
+                    } label: {
+                        Text("Vendre")
+                            .font(.system(size: 12, weight: .bold, design: .rounded))
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 7)
+                            .background(Capsule().fill(MarketplacePalette.primary))
+                            .foregroundStyle(.white)
                     }
                 }
+                .padding(12)
+                .background(RoundedRectangle(cornerRadius: 14).fill(MarketplacePalette.background))
             } else {
-                // Pour CD/DVD, Accessoires et Vêtements : grille dédiée bien séparée
                 LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 14) {
                     ForEach(items) { listing in
                         MarketplaceListingCard(
@@ -963,9 +984,10 @@ public struct MarketplaceListingDetailView: View {
                     }
 
                     Button {
-                        _ = store.ensureConversation(for: liveListing)
-                        dismiss()
-                        store.selectedTab = .messages
+                        if store.ensureConversation(for: liveListing) != nil {
+                            dismiss()
+                            store.selectedTab = .messages
+                        }
                     } label: {
                         HStack {
                             Image(systemName: "bubble.left.and.bubble.right.fill")
@@ -1200,8 +1222,8 @@ public struct MarketplaceShareListingSheetView: View {
     @Environment(\.dismiss) private var dismiss
     public let listing: MarketplaceListing
 
-    @State private var recipientUsername: String = "claire.bouquine"
-    @State private var noteText: String = "Regarde cette pépite sur Livria Marketplace !"
+    @State private var recipientUsername: String = ""
+    @State private var noteText: String = "Regarde cette annonce sur Livria Marketplace !"
 
     public var body: some View {
         NavigationStack {

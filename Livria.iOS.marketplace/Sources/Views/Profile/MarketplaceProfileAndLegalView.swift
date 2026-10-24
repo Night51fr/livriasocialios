@@ -308,10 +308,18 @@ public struct MarketplaceProfileView: View {
 
     // MARK: - Mes Annonces (Créer, Modifier, Supprimer)
 
+    private var myOwnListings: [MarketplaceListing] {
+        guard let me = store.currentUser else { return [] }
+        return store.listings.filter {
+            $0.sellerUsername.caseInsensitiveCompare(me.username) == .orderedSame ||
+            ($0.sellerUserId > 0 && $0.sellerUserId == me.numericUserId)
+        }
+    }
+
     private var myListingsManagementCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Mes Annonces & Ventes (\(store.listings.count))")
+                Text("Mes Annonces & Ventes (\(myOwnListings.count))")
                     .font(.system(size: 16, weight: .black, design: .rounded))
                     .foregroundStyle(MarketplacePalette.ink)
                 Spacer()
@@ -325,7 +333,15 @@ public struct MarketplaceProfileView: View {
                 }
             }
 
-            ForEach(store.listings.prefix(5)) { item in
+            if myOwnListings.isEmpty {
+                Text(store.isAuthenticated
+                     ? "Vous n'avez pas encore publié d'annonce. Appuyez sur « Nouvelle annonce » pour mettre en vente un livre, CD/DVD, accessoire ou vêtement."
+                     : "Connectez-vous avec Viple Live ID pour publier et gérer vos annonces.")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(MarketplacePalette.inkMuted)
+                    .padding(.vertical, 6)
+            } else {
+                ForEach(myOwnListings) { item in
                 HStack(spacing: 10) {
                     MarketplaceSmartImage(urlString: item.photos.first, contentMode: .fill)
                         .frame(width: 52, height: 52)
@@ -364,6 +380,7 @@ public struct MarketplaceProfileView: View {
                 }
                 .padding(8)
                 .background(RoundedRectangle(cornerRadius: 12).fill(MarketplacePalette.background))
+                }
             }
         }
         .marketplaceCard()

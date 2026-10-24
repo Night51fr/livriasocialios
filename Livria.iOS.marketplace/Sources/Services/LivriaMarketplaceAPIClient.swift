@@ -29,7 +29,7 @@ public enum MarketplaceURLResolver {
     }
 }
 
-// MARK: - Client API Livria Marketplace (Connecté à livria.store/api/mobile/v1)
+// MARK: - Client API Livria Marketplace (Connecté en temps réel à livria.store/api/mobile/v1 & Viple Live ID)
 
 public actor LivriaMarketplaceAPIClient {
     public static let shared = LivriaMarketplaceAPIClient()
@@ -39,6 +39,10 @@ public actor LivriaMarketplaceAPIClient {
     private let baseURL: URL
     private let session: URLSession
     private var authToken: String?
+    private var currentUserId: Int = 0
+    private var currentEmail: String = ""
+    private var currentCid: String = ""
+    private let vendorId: String
 
     public init(baseURLString: String = MarketplaceURLResolver.baseURL) {
         self.baseURL = URL(string: baseURLString) ?? URL(string: "https://livria.store")!
@@ -47,6 +51,42 @@ public actor LivriaMarketplaceAPIClient {
         config.timeoutIntervalForResource = 20
         self.session = URLSession(configuration: config)
         self.authToken = UserDefaults.standard.string(forKey: "livria_marketplace_viple_token")
+        if let savedVendor = UserDefaults.standard.string(forKey: "livria_marketplace_vendor_id"), !savedVendor.isEmpty {
+            self.vendorId = savedVendor
+        } else {
+            let generated = UUID().uuidString
+            UserDefaults.standard.set(generated, forKey: "livria_marketplace_vendor_id")
+            self.vendorId = generated
+        }
+        if let savedData = UserDefaults.standard.data(forKey: "livria_marketplace_viple_user_v1"),
+           let savedUser = try? JSONDecoder().decode(MarketplaceUserProfile.self, from: savedData) {
+            self.currentUserId = savedUser.numericUserId
+            self.currentEmail = savedUser.email
+            self.currentCid = savedUser.cid ?? ""
+        }
+    }
+
+    public func setSession(token: String?, user: MarketplaceUserProfile?) {
+        self.authToken = token
+        if let token, !token.isEmpty {
+            UserDefaults.standard.set(token, forKey: "livria_marketplace_viple_token")
+        } else {
+            UserDefaults.standard.removeObject(forKey: "livria_marketplace_viple_token")
+        }
+
+        if let user {
+            self.currentUserId = user.numericUserId
+            self.currentEmail = user.email
+            self.currentCid = user.cid ?? ""
+            if let encoded = try? JSONEncoder().encode(user) {
+                UserDefaults.standard.set(encoded, forKey: "livria_marketplace_viple_user_v1")
+            }
+        } else {
+            self.currentUserId = 0
+            self.currentEmail = ""
+            self.currentCid = ""
+            UserDefaults.standard.removeObject(forKey: "livria_marketplace_viple_user_v1")
+        }
     }
 
     public func setToken(_ token: String?) {
@@ -65,10 +105,27 @@ public actor LivriaMarketplaceAPIClient {
     // MARK: - Bootstrap & Maintenance Check (20s Timeout / HTTP 503 / /admin Maintenance)
 
     public func fetchBootstrap() async throws -> MarketplaceBootstrapResponse {
-        let url = baseURL.appendingPathComponent("api/mobile/v1/marketplace/bootstrap")
+        var components = URLComponents(url: baseURL.appendingPathComponent("api/mobile/v1/marketplace/bootstrap"), resolvingAgainstBaseURL: false)
+        var queryItems: [URLQueryItem] = []
+        if currentUserId > 0 {
+            queryItems.append(URLQueryItem(name: "userId", value: String(currentUserId)))
+        }
+        if !currentEmail.isEmpty {
+            queryItems.append(URLQueryItem(name: "email", value: currentEmail))
+        }
+        if !currentCid.isEmpty {
+            queryItems.append(URLQueryItem(name: "cid", value: currentCid))
+        }
+        if !queryItems.isEmpty {
+            components?.queryItems = queryItems
+        }
+        let url = components?.url ?? baseURL.appendingPathComponent("api/mobile/v1/marketplace/bootstrap")
+
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         req.timeoutInterval = 20
+        req.setValue("Livria Marketplace", forHTTPHeaderField: "X-Viple-App-Name")
+        req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
         if let token = authToken, !token.isEmpty {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
@@ -98,12 +155,16 @@ public actor LivriaMarketplaceAPIClient {
         return decoded
     }
 
-    // MARK: - Authentification Viple Live ID & Cross-App SSO
+    // MARK: - Authentification Viple Live ID Réelle & Cross-App SSO
 
     public func loginVipleLiveId(emailOrUsername: String, password: String) async throws -> MarketplaceAuthResponse {
-        return try await postJSON(
+        return try await postAuthJSON(
             path: "api/mobile/v1/auth/login",
-            body: ["emailOrUsername": emailOrUsername, "password": password]
+            body: [
+                "email": emailOrUsername,
+                "emailOrUsername": emailOrUsername,
+                "password": password
+            ]
         )
     }
 
@@ -113,12 +174,17 @@ public actor LivriaMarketplaceAPIClient {
         email: String,
         password: String
     ) async throws -> MarketplaceAuthResponse {
-        return try await postJSON(
+        let cleanEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        return try await postAuthJSON(
             path: "api/mobile/v1/auth/register",
             body: [
+                "emailMode": "custom",
+                "customEmail": cleanEmail,
+                "email": cleanEmail,
                 "username": username,
                 "displayName": displayName,
-                "email": email,
+                "firstName": displayName,
+                "lastName": "",
                 "password": password
             ]
         )
@@ -130,7 +196,7 @@ public actor LivriaMarketplaceAPIClient {
         fullName: String?,
         identityToken: String?
     ) async throws -> MarketplaceAuthResponse {
-        return try await postJSON(
+        return try await postAuthJSON(
             path: "api/mobile/v1/auth/apple",
             body: [
                 "appleUserId": appleUserId,
@@ -142,32 +208,50 @@ public actor LivriaMarketplaceAPIClient {
     }
 
     public func registerCrossAppSession(sourceApp: String = "Livria Marketplace") async {
-        guard let token = authToken, !token.isEmpty else { return }
+        guard currentUserId > 0 || !currentEmail.isEmpty else { return }
         struct Payload: Encodable {
             let sourceApp: String
-            let token: String
+            let userId: Int
+            let email: String
+            let cid: String
+            let vendorId: String
         }
         struct Resp: Decodable { let ok: Bool? }
         _ = try? await postJSON(
-            path: "api/mobile/v1/auth/cross-app-register",
-            body: Payload(sourceApp: sourceApp, token: token)
+            path: "api/mobile/v1/sso/announce",
+            body: Payload(
+                sourceApp: sourceApp,
+                userId: currentUserId,
+                email: currentEmail,
+                cid: currentCid,
+                vendorId: vendorId
+            )
         ) as Resp
     }
 
     public func clearCrossAppSession() async {
-        struct EmptyBody: Encodable {}
+        struct Payload: Encodable {
+            let sourceApp: String
+            let vendorId: String
+        }
         struct Resp: Decodable { let ok: Bool? }
-        _ = try? await postJSON(path: "api/mobile/v1/auth/cross-app-clear", body: EmptyBody()) as Resp
+        _ = try? await postJSON(
+            path: "api/mobile/v1/sso/clear",
+            body: Payload(sourceApp: "Livria Marketplace", vendorId: vendorId)
+        ) as Resp
     }
 
     public func discoverCrossAppSession(targetApp: String = "Livria Marketplace") async -> MarketplaceCrossAppDiscoverResponse? {
-        let encoded = targetApp.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "Livria%20Marketplace"
-        guard let url = URL(string: "\(baseURL.absoluteString)/api/mobile/v1/auth/cross-app-discover?targetApp=\(encoded)") else {
+        let encodedApp = targetApp.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "Livria%20Marketplace"
+        let encodedVendor = vendorId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? vendorId
+        guard let url = URL(string: "\(baseURL.absoluteString)/api/mobile/v1/sso/discover?app=\(encodedApp)&vendorId=\(encodedVendor)") else {
             return nil
         }
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
         req.timeoutInterval = 8
+        req.setValue("Livria Marketplace", forHTTPHeaderField: "X-Viple-App-Name")
+        req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
         guard let (data, response) = try? await session.data(for: req),
               let http = response as? HTTPURLResponse,
               (200...299).contains(http.statusCode),
@@ -179,25 +263,60 @@ public actor LivriaMarketplaceAPIClient {
         return decoded
     }
 
+    public func acceptCrossAppSession(user: MarketplaceUserProfile) async -> MarketplaceAuthResponse? {
+        struct Payload: Encodable {
+            let userId: Int
+            let email: String
+            let cid: String
+            let vendorId: String
+        }
+        return try? await postAuthJSON(
+            path: "api/mobile/v1/sso/accept",
+            body: Payload(
+                userId: user.numericUserId,
+                email: user.email,
+                cid: user.cid ?? "",
+                vendorId: vendorId
+            )
+        )
+    }
+
     public func deleteAccount() async -> Bool {
-        struct EmptyBody: Encodable {}
+        struct Payload: Encodable {
+            let userId: Int
+            let email: String
+            let cid: String
+        }
         struct DeleteResp: Decodable {
             let ok: Bool?
             let success: Bool?
         }
-        if let resp: DeleteResp = try? await postJSON(path: "api/mobile/v1/auth/delete-account", body: EmptyBody()) {
-            return (resp.ok ?? resp.success ?? true)
+        if let resp: DeleteResp = try? await postJSON(
+            path: "api/mobile/v1/auth/delete-account",
+            body: Payload(userId: currentUserId, email: currentEmail, cid: currentCid)
+        ) {
+            return (resp.ok ?? resp.success ?? false)
         }
-        return true
+        return false
     }
 
     // MARK: - Upload Photo de Profil Recadrée (In-App Avatar Cropper)
 
     public func uploadCroppedAvatar(jpegData: Data, fileName: String = "avatar_cropped.jpg") async -> String? {
         struct UploadPayload: Encodable {
+            let userId: Int
+            let email: String
+            let cid: String
             let fileName: String
+            let extensionName: String
             let mimeType: String
             let base64Data: String
+
+            enum CodingKeys: String, CodingKey {
+                case userId, email, cid, fileName
+                case extensionName = "extension"
+                case mimeType, base64Data
+            }
         }
         struct UploadResp: Decodable {
             let ok: Bool?
@@ -206,7 +325,15 @@ public actor LivriaMarketplaceAPIClient {
         let b64 = jpegData.base64EncodedString()
         if let resp: UploadResp = try? await postJSON(
             path: "api/mobile/v1/profile/avatar",
-            body: UploadPayload(fileName: fileName, mimeType: "image/jpeg", base64Data: b64)
+            body: UploadPayload(
+                userId: currentUserId,
+                email: currentEmail,
+                cid: currentCid,
+                fileName: fileName,
+                extensionName: "jpg",
+                mimeType: "image/jpeg",
+                base64Data: b64
+            )
         ), let avatarUrl = resp.avatarUrl, !avatarUrl.isEmpty {
             return MarketplaceURLResolver.resolveMediaURL(avatarUrl)
         }
@@ -217,22 +344,75 @@ public actor LivriaMarketplaceAPIClient {
 
     public func uploadMarketplaceMedia(data: Data, fileName: String, mimeType: String) async -> String? {
         struct UploadPayload: Encodable {
+            let mediaKind: String
+            let extensionName: String
             let fileName: String
             let mimeType: String
             let base64Data: String
+
+            enum CodingKeys: String, CodingKey {
+                case mediaKind
+                case extensionName = "extension"
+                case fileName, mimeType, base64Data
+            }
         }
         struct UploadResp: Decodable {
             let ok: Bool?
             let url: String?
         }
+        let isVoice = mimeType.lowercased().contains("audio") || fileName.lowercased().hasSuffix(".m4a")
         let b64 = data.base64EncodedString()
         if let resp: UploadResp = try? await postJSON(
             path: "api/mobile/v1/marketplace/media/upload",
-            body: UploadPayload(fileName: fileName, mimeType: mimeType, base64Data: b64)
+            body: UploadPayload(
+                mediaKind: isVoice ? "voice" : "image",
+                extensionName: isVoice ? "m4a" : "jpg",
+                fileName: fileName,
+                mimeType: mimeType,
+                base64Data: b64
+            )
         ), let url = resp.url, !url.isEmpty {
             return MarketplaceURLResolver.resolveMediaURL(url)
         }
         return nil
+    }
+
+    // MARK: - Recherche ISBN Réelle (Catalogue Livria + Google Books)
+
+    public func lookupISBN(_ isbn: String) async -> MarketplaceISBNLookupResult? {
+        struct ISBNBackendResp: Decodable {
+            let ok: Bool?
+            let found: Bool?
+            let isbn: String?
+            let title: String?
+            let author: String?
+            let publisher: String?
+            let subcategory: String?
+            let description: String?
+            let coverUrl: String?
+            let suggestedPrice: Double?
+        }
+        let clean = isbn.replacingOccurrences(of: "-", with: "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return nil }
+        let encoded = clean.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? clean
+        guard let resp: ISBNBackendResp = try? await getJSON(path: "api/mobile/v1/marketplace/isbn/\(encoded)"),
+              resp.found == true,
+              let title = resp.title, !title.isEmpty else {
+            return nil
+        }
+        let suggested = resp.suggestedPrice ?? 8.00
+        return MarketplaceISBNLookupResult(
+            isbn: resp.isbn ?? clean,
+            title: title,
+            author: resp.author ?? "",
+            publisher: resp.publisher ?? "",
+            releaseYear: "2024",
+            suggestedPrice: suggested,
+            originalRetailPrice: max(suggested + 4.00, suggested * 1.6),
+            subcategory: resp.subcategory ?? "Romans & Littérature",
+            coverUrl: resp.coverUrl ?? "",
+            summary: resp.description ?? ""
+        )
     }
 
     // MARK: - Recherche de GIFs Animés (API Giphy via Backend Livria)
@@ -262,38 +442,127 @@ public actor LivriaMarketplaceAPIClient {
     // MARK: - Annonces Marketplace (Création, Modification, Suppression, Favoris)
 
     public func createListing(_ listing: MarketplaceListing) async throws -> MarketplaceListing {
+        struct CreatePayload: Encodable {
+            let userId: Int
+            let email: String
+            let cid: String
+            let category: String
+            let subcategory: String
+            let title: String
+            let subtitleOrCreator: String
+            let description: String
+            let condition: String
+            let sellerPrice: Double
+            let photoUrls: [String]
+            let isbnOrBarcode: String
+            let publisherOrLabel: String
+            let formatOrMedium: String
+            let clothingSize: String
+            let brand: String
+            let publicationYear: Int
+        }
         struct Resp: Decodable {
             let ok: Bool?
             let listing: MarketplaceListing?
         }
-        let resp: Resp = try await postJSON(path: "api/mobile/v1/marketplace/listings/create", body: listing)
+        let payload = CreatePayload(
+            userId: currentUserId,
+            email: currentEmail,
+            cid: currentCid,
+            category: listing.category,
+            subcategory: listing.subcategory,
+            title: listing.title,
+            subtitleOrCreator: listing.authorOrArtist?.isEmpty == false ? listing.authorOrArtist! : listing.subtitle,
+            description: listing.description,
+            condition: listing.condition,
+            sellerPrice: listing.price,
+            photoUrls: listing.photos,
+            isbnOrBarcode: listing.isbn ?? "",
+            publisherOrLabel: listing.publisherOrBrand ?? "",
+            formatOrMedium: listing.subtitle,
+            clothingSize: listing.clothingSize ?? "",
+            brand: listing.publisherOrBrand ?? "",
+            publicationYear: Int(listing.releaseYear ?? "2024") ?? 2024
+        )
+        let resp: Resp = try await postJSON(path: "api/mobile/v1/marketplace/listings/create", body: payload)
         return resp.listing ?? listing
     }
 
     public func updateListing(_ listing: MarketplaceListing) async throws -> MarketplaceListing {
+        struct UpdatePayload: Encodable {
+            let userId: Int
+            let email: String
+            let cid: String
+            let listingId: Int
+            let category: String
+            let subcategory: String
+            let title: String
+            let subtitleOrCreator: String
+            let description: String
+            let condition: String
+            let sellerPrice: Double
+            let photoUrls: [String]
+            let isbnOrBarcode: String
+            let publisherOrLabel: String
+            let clothingSize: String
+        }
         struct Resp: Decodable {
             let ok: Bool?
             let listing: MarketplaceListing?
         }
-        let resp: Resp = try await postJSON(path: "api/mobile/v1/marketplace/listings/update", body: listing)
+        let payload = UpdatePayload(
+            userId: currentUserId,
+            email: currentEmail,
+            cid: currentCid,
+            listingId: Int(listing.id) ?? 0,
+            category: listing.category,
+            subcategory: listing.subcategory,
+            title: listing.title,
+            subtitleOrCreator: listing.authorOrArtist?.isEmpty == false ? listing.authorOrArtist! : listing.subtitle,
+            description: listing.description,
+            condition: listing.condition,
+            sellerPrice: listing.price,
+            photoUrls: listing.photos,
+            isbnOrBarcode: listing.isbn ?? "",
+            publisherOrLabel: listing.publisherOrBrand ?? "",
+            clothingSize: listing.clothingSize ?? ""
+        )
+        let resp: Resp = try await postJSON(path: "api/mobile/v1/marketplace/listings/update", body: payload)
         return resp.listing ?? listing
     }
 
     public func deleteListing(listingId: String) async throws -> Bool {
-        struct Payload: Encodable { let listingId: String }
+        struct Payload: Encodable {
+            let userId: Int
+            let email: String
+            let cid: String
+            let listingId: String
+        }
         struct Resp: Decodable { let ok: Bool? }
-        let resp: Resp = try await postJSON(path: "api/mobile/v1/marketplace/listings/delete", body: Payload(listingId: listingId))
-        return resp.ok ?? true
+        let resp: Resp = try await postJSON(
+            path: "api/mobile/v1/marketplace/listings/delete",
+            body: Payload(userId: currentUserId, email: currentEmail, cid: currentCid, listingId: listingId)
+        )
+        return resp.ok ?? false
     }
 
     public func toggleFavorite(listingId: String) async -> Bool? {
-        struct Payload: Encodable { let listingId: String }
+        struct Payload: Encodable {
+            let userId: Int
+            let email: String
+            let cid: String
+            let listingId: String
+        }
         struct Resp: Decodable {
             let ok: Bool?
+            let isFavorite: Bool?
             let isFavorited: Bool?
         }
-        if let resp: Resp = try? await postJSON(path: "api/mobile/v1/marketplace/listings/favorite", body: Payload(listingId: listingId)) {
-            return resp.isFavorited
+        if let resp: Resp = try? await postJSON(
+            path: "api/mobile/v1/marketplace/listings/favorite",
+            body: Payload(userId: currentUserId, email: currentEmail, cid: currentCid, listingId: listingId)
+        ) {
+            return resp.isFavorite ?? resp.isFavorited
         }
         return nil
     }
@@ -302,6 +571,9 @@ public actor LivriaMarketplaceAPIClient {
 
     public func createOffer(listingId: String, offeredPrice: Double, message: String) async throws -> (MarketplaceOffer?, String?) {
         struct Payload: Encodable {
+            let userId: Int
+            let email: String
+            let cid: String
             let listingId: String
             let offeredPrice: Double
             let message: String
@@ -309,19 +581,29 @@ public actor LivriaMarketplaceAPIClient {
         struct Resp: Decodable {
             let ok: Bool?
             let offer: MarketplaceOffer?
-            let conversationId: String?
+            let conversationId: Int?
         }
         let resp: Resp = try await postJSON(
             path: "api/mobile/v1/marketplace/offers/create",
-            body: Payload(listingId: listingId, offeredPrice: offeredPrice, message: message)
+            body: Payload(
+                userId: currentUserId,
+                email: currentEmail,
+                cid: currentCid,
+                listingId: listingId,
+                offeredPrice: offeredPrice,
+                message: message
+            )
         )
-        return (resp.offer, resp.conversationId)
+        return (resp.offer, resp.conversationId.map { String($0) })
     }
 
     public func respondToOffer(offerId: String, accept: Bool) async throws -> MarketplaceOffer? {
         struct Payload: Encodable {
+            let userId: Int
+            let email: String
+            let cid: String
             let offerId: String
-            let accept: Bool
+            let action: String
         }
         struct Resp: Decodable {
             let ok: Bool?
@@ -329,14 +611,21 @@ public actor LivriaMarketplaceAPIClient {
         }
         let resp: Resp = try await postJSON(
             path: "api/mobile/v1/marketplace/offers/respond",
-            body: Payload(offerId: offerId, accept: accept)
+            body: Payload(
+                userId: currentUserId,
+                email: currentEmail,
+                cid: currentCid,
+                offerId: offerId,
+                action: accept ? "accept" : "decline"
+            )
         )
         return resp.offer
     }
 
     public func fetchConversationThread(conversationId: String) async throws -> MarketplaceThreadResponse {
         let encoded = conversationId.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? conversationId
-        return try await getJSON(path: "api/mobile/v1/marketplace/messages/thread/\(encoded)")
+        let encodedEmail = currentEmail.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        return try await getJSON(path: "api/mobile/v1/marketplace/messages/thread/\(encoded)?userId=\(currentUserId)&email=\(encodedEmail)")
     }
 
     public func sendDirectMessage(
@@ -351,36 +640,51 @@ public actor LivriaMarketplaceAPIClient {
         offerAmount: Double? = nil
     ) async throws -> (MarketplaceDirectMessage?, String?) {
         struct Payload: Encodable {
-            let conversationId: String?
-            let listingId: String
-            let recipientUsername: String
-            let text: String
-            let imageUrl: String?
-            let gifUrl: String?
-            let audioUrl: String?
-            let audioDurationSeconds: Int?
-            let offerAmount: Double?
+            let userId: Int
+            let email: String
+            let cid: String
+            let conversationId: Int
+            let listingId: Int
+            let body: String
+            let attachmentType: String
+            let attachmentUrl: String
+            let voiceDurationSec: Int
         }
         struct Resp: Decodable {
             let ok: Bool?
-            let conversationId: String?
-            let message: MarketplaceDirectMessage?
+            let conversationId: Int?
+            let messageItem: MarketplaceDirectMessage?
+        }
+        let attType: String
+        let attUrl: String
+        if let audioUrl, !audioUrl.isEmpty {
+            attType = "voice"
+            attUrl = audioUrl
+        } else if let gifUrl, !gifUrl.isEmpty {
+            attType = "gif"
+            attUrl = gifUrl
+        } else if let imageUrl, !imageUrl.isEmpty {
+            attType = "image"
+            attUrl = imageUrl
+        } else {
+            attType = "none"
+            attUrl = ""
         }
         let resp: Resp = try await postJSON(
             path: "api/mobile/v1/marketplace/messages/send",
             body: Payload(
-                conversationId: conversationId,
-                listingId: listingId,
-                recipientUsername: recipientUsername,
-                text: text,
-                imageUrl: imageUrl,
-                gifUrl: gifUrl,
-                audioUrl: audioUrl,
-                audioDurationSeconds: audioDurationSeconds,
-                offerAmount: offerAmount
+                userId: currentUserId,
+                email: currentEmail,
+                cid: currentCid,
+                conversationId: Int(conversationId ?? "0") ?? 0,
+                listingId: Int(listingId) ?? 0,
+                body: text,
+                attachmentType: attType,
+                attachmentUrl: attUrl,
+                voiceDurationSec: audioDurationSeconds ?? 0
             )
         )
-        return (resp.message, resp.conversationId)
+        return (resp.messageItem, resp.conversationId.map { String($0) })
     }
 
     // MARK: - Checkout Complet (PayPal, Apple Pay, UPS Access Point & Viple Taker)
@@ -396,30 +700,31 @@ public actor LivriaMarketplaceAPIClient {
         isVipleTakerRelay: Bool
     ) async throws -> MarketplaceOrder {
         struct Payload: Encodable {
+            let userId: Int
+            let email: String
+            let cid: String
             let listingId: String
             let agreedPrice: Double?
             let paymentMethod: String
             let deliveryMode: String
-            let relayId: String?
-            let relayName: String?
-            let relayAddress: String?
-            let isVipleTakerRelay: Bool
+            let relayOrAddress: String
         }
         struct Resp: Decodable {
             let ok: Bool?
             let order: MarketplaceOrder
         }
+        let summary = [relayName, relayAddress].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " — ")
         let resp: Resp = try await postJSON(
             path: "api/mobile/v1/marketplace/checkout",
             body: Payload(
+                userId: currentUserId,
+                email: currentEmail,
+                cid: currentCid,
                 listingId: listingId,
                 agreedPrice: agreedPrice,
                 paymentMethod: paymentMethod,
                 deliveryMode: deliveryMode,
-                relayId: relayId,
-                relayName: relayName,
-                relayAddress: relayAddress,
-                isVipleTakerRelay: isVipleTakerRelay
+                relayOrAddress: summary.isEmpty ? deliveryMode : summary
             )
         )
         return resp.order
@@ -428,8 +733,16 @@ public actor LivriaMarketplaceAPIClient {
     // MARK: - Recherche Live Points Relais UPS & Viple Taker
 
     public func searchRelays(postalCode: String, city: String) async -> [MarketplaceRelayPoint] {
+        struct RelaysEnvelope: Decodable {
+            let communityRelays: [MarketplaceRelayPoint]?
+            let upsRelays: [MarketplaceRelayPoint]?
+            let points: [MarketplaceRelayPoint]?
+        }
         let cp = postalCode.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
         let c = city.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        if let env: RelaysEnvelope = try? await getJSON(path: "api/mobile/v1/relays?postalCode=\(cp)&city=\(c)") {
+            return (env.communityRelays ?? []) + (env.upsRelays ?? []) + (env.points ?? [])
+        }
         if let points: [MarketplaceRelayPoint] = try? await getJSON(path: "api/mobile/v1/relays?postalCode=\(cp)&city=\(c)") {
             return points
         }
@@ -439,7 +752,8 @@ public actor LivriaMarketplaceAPIClient {
     // MARK: - Devenir Viple Taker (Point Relais Particulier — 1,00 € / colis)
 
     public func fetchTakerStatus() async throws -> MarketplaceTakerStatusResponse {
-        return try await getJSON(path: "api/mobile/v1/taker/status")
+        let encodedEmail = currentEmail.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? ""
+        return try await getJSON(path: "api/mobile/v1/taker/status?userId=\(currentUserId)&email=\(encodedEmail)")
     }
 
     public func submitTakerApplication(
@@ -457,41 +771,59 @@ public actor LivriaMarketplaceAPIClient {
         additionalReply: String?
     ) async throws -> MarketplaceTakerStatusResponse {
         struct Payload: Encodable {
-            let fullName: String
+            let userId: Int
             let email: String
+            let cid: String
+            let displayName: String
+            let firstName: String
+            let lastName: String
             let phone: String
-            let streetAddress: String
+            let address: String
             let postalCode: String
             let city: String
-            let availabilityHours: String
-            let storageCapacityParcels: Int
+            let openingHours: String
+            let storageCapacity: String
             let housingType: String
-            let motivation: String
-            let acceptsCharter: Bool
-            let additionalReply: String?
+            let motivationAndAccessNotes: String
+            let supplementaryResponse: String
+            let sourceApp: String
         }
+        let parts = fullName.split(separator: " ", maxSplits: 1).map(String.init)
+        let first = parts.first ?? fullName
+        let last = parts.count > 1 ? parts[1] : ""
         return try await postJSON(
             path: "api/mobile/v1/taker/apply",
             body: Payload(
-                fullName: fullName,
-                email: email,
+                userId: currentUserId,
+                email: email.isEmpty ? currentEmail : email,
+                cid: currentCid,
+                displayName: fullName,
+                firstName: first,
+                lastName: last,
                 phone: phone,
-                streetAddress: streetAddress,
+                address: streetAddress,
                 postalCode: postalCode,
                 city: city,
-                availabilityHours: availabilityHours,
-                storageCapacityParcels: storageCapacityParcels,
+                openingHours: availabilityHours,
+                storageCapacity: "\(storageCapacityParcels) colis / semaine",
                 housingType: housingType,
-                motivation: motivation,
-                acceptsCharter: acceptsCharter,
-                additionalReply: additionalReply
+                motivationAndAccessNotes: motivation,
+                supplementaryResponse: additionalReply ?? "",
+                sourceApp: "Livria Marketplace"
             )
         )
     }
 
     public func cancelTakerApplication(applicationId: String?) async throws -> MarketplaceTakerStatusResponse {
-        struct Payload: Encodable { let applicationId: String? }
-        return try await postJSON(path: "api/mobile/v1/taker/cancel", body: Payload(applicationId: applicationId))
+        struct Payload: Encodable {
+            let userId: Int
+            let email: String
+            let applicationId: String?
+        }
+        return try await postJSON(
+            path: "api/mobile/v1/taker/cancel",
+            body: Payload(userId: currentUserId, email: currentEmail, applicationId: applicationId)
+        )
     }
 
     // MARK: - Helpers HTTP
@@ -501,6 +833,8 @@ public actor LivriaMarketplaceAPIClient {
         var req = URLRequest(url: fullURL)
         req.httpMethod = "GET"
         req.timeoutInterval = 20
+        req.setValue("Livria Marketplace", forHTTPHeaderField: "X-Viple-App-Name")
+        req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
         if let token = authToken, !token.isEmpty {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
@@ -517,6 +851,8 @@ public actor LivriaMarketplaceAPIClient {
         req.httpMethod = "POST"
         req.timeoutInterval = 20
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Livria Marketplace", forHTTPHeaderField: "X-Viple-App-Name")
+        req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
         if let token = authToken, !token.isEmpty {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
@@ -526,5 +862,21 @@ public actor LivriaMarketplaceAPIClient {
             throw URLError(.badServerResponse)
         }
         return try JSONDecoder().decode(T.self, from: data)
+    }
+
+    private func postAuthJSON<B: Encodable>(path: String, body: B) async throws -> MarketplaceAuthResponse {
+        let fullURL = URL(string: "\(baseURL.absoluteString)/\(path)") ?? baseURL.appendingPathComponent(path)
+        var req = URLRequest(url: fullURL)
+        req.httpMethod = "POST"
+        req.timeoutInterval = 20
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue("Livria Marketplace", forHTTPHeaderField: "X-Viple-App-Name")
+        req.setValue(vendorId, forHTTPHeaderField: "X-Viple-Vendor-Id")
+        if let token = authToken, !token.isEmpty {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        req.httpBody = try JSONEncoder().encode(body)
+        let (data, _) = try await session.data(for: req)
+        return try JSONDecoder().decode(MarketplaceAuthResponse.self, from: data)
     }
 }

@@ -619,14 +619,26 @@ public struct MarketplaceVipleTakerApplicationSheet: View {
             .tint(MarketplacePalette.primary)
 
             Button {
+                let cleanName = fullName.trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanPhone = phone.trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanStreet = streetAddress.trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanZip = postalCode.trimmingCharacters(in: .whitespacesAndNewlines)
+                let cleanCity = city.trimmingCharacters(in: .whitespacesAndNewlines)
+
+                guard !cleanName.isEmpty, !cleanEmail.isEmpty, !cleanPhone.isEmpty, !cleanStreet.isEmpty, !cleanZip.isEmpty, !cleanCity.isEmpty else {
+                    store.showToast("Veuillez remplir tous les champs obligatoires (*).")
+                    return
+                }
+
                 Task {
                     _ = await store.submitTakerApplication(
-                        fullName: fullName.isEmpty ? "Membre Viple Taker" : fullName,
-                        email: email.isEmpty ? "contact@viple.fr" : email,
-                        phone: phone.isEmpty ? "06 12 34 56 78" : phone,
-                        streetAddress: streetAddress.isEmpty ? "14 Place Stanislas" : streetAddress,
-                        postalCode: postalCode.isEmpty ? "54000" : postalCode,
-                        city: city.isEmpty ? "Nancy" : city,
+                        fullName: cleanName,
+                        email: cleanEmail,
+                        phone: cleanPhone,
+                        streetAddress: cleanStreet,
+                        postalCode: cleanZip,
+                        city: cleanCity,
                         availabilityHours: availabilityHours,
                         storageCapacityParcels: storageCapacityParcels,
                         housingType: housingType,

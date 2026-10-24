@@ -271,7 +271,7 @@ public struct MarketplaceListing: Identifiable, Codable, Hashable, Sendable {
         self.shippingFee = (try? c.decode(Double.self, forKey: .shippingFee)) ?? 0.00
         self.photos = (try? c.decode([String].self, forKey: .photos))
             ?? (try? c.decode([String].self, forKey: .photoUrls))
-            ?? ["https://images.unsplash.com/photo-1544947950-fa07a98d237f?w=800&q=80"]
+            ?? []
         self.isbn = (try? c.decode(String.self, forKey: .isbn)) ?? (try? c.decode(String.self, forKey: .isbnOrBarcode))
         self.authorOrArtist = (try? c.decode(String.self, forKey: .authorOrArtist))
             ?? (try? c.decode(String.self, forKey: .subtitleOrCreator))
@@ -513,6 +513,121 @@ public struct MarketplaceDirectMessage: Identifiable, Codable, Hashable, Sendabl
     public var offerStatus: String?
     public var sentAtDisplay: String
     public var isFromMe: Bool
+
+    public init(
+        id: String,
+        conversationId: String,
+        listingId: String,
+        senderUsername: String,
+        senderDisplayName: String,
+        senderAvatarUrl: String?,
+        text: String,
+        imageUrl: String?,
+        gifUrl: String?,
+        audioUrl: String?,
+        audioDurationSeconds: Int?,
+        offerId: String?,
+        offerAmount: Double?,
+        offerStatus: String?,
+        sentAtDisplay: String,
+        isFromMe: Bool
+    ) {
+        self.id = id
+        self.conversationId = conversationId
+        self.listingId = listingId
+        self.senderUsername = senderUsername
+        self.senderDisplayName = senderDisplayName
+        self.senderAvatarUrl = senderAvatarUrl
+        self.text = text
+        self.imageUrl = imageUrl
+        self.gifUrl = gifUrl
+        self.audioUrl = audioUrl
+        self.audioDurationSeconds = audioDurationSeconds
+        self.offerId = offerId
+        self.offerAmount = offerAmount
+        self.offerStatus = offerStatus
+        self.sentAtDisplay = sentAtDisplay
+        self.isFromMe = isFromMe
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, conversationId, listingId, senderId, senderUsername, senderDisplayName, senderAvatarUrl
+        case text, body, attachmentType, attachmentUrl
+        case imageUrl, gifUrl, audioUrl, audioDurationSeconds, voiceDurationSec
+        case offerId, offerAmount, offerStatus, sentAtDisplay, sentAt, isFromMe
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let s = try? c.decode(String.self, forKey: .id) {
+            self.id = s
+        } else if let i = try? c.decode(Int.self, forKey: .id) {
+            self.id = String(i)
+        } else {
+            self.id = UUID().uuidString
+        }
+        if let s = try? c.decode(String.self, forKey: .conversationId) {
+            self.conversationId = s
+        } else if let i = try? c.decode(Int.self, forKey: .conversationId) {
+            self.conversationId = String(i)
+        } else {
+            self.conversationId = "0"
+        }
+        if let s = try? c.decode(String.self, forKey: .listingId) {
+            self.listingId = s
+        } else if let i = try? c.decode(Int.self, forKey: .listingId) {
+            self.listingId = String(i)
+        } else {
+            self.listingId = "0"
+        }
+        let disp = (try? c.decode(String.self, forKey: .senderDisplayName)) ?? "Membre Livria"
+        self.senderDisplayName = disp
+        self.senderUsername = (try? c.decode(String.self, forKey: .senderUsername)) ?? disp.lowercased().replacingOccurrences(of: " ", with: ".")
+        self.senderAvatarUrl = try? c.decode(String.self, forKey: .senderAvatarUrl)
+        self.text = (try? c.decode(String.self, forKey: .text))
+            ?? (try? c.decode(String.self, forKey: .body))
+            ?? ""
+        let attType = (try? c.decode(String.self, forKey: .attachmentType))?.lowercased() ?? "none"
+        let attUrl = try? c.decode(String.self, forKey: .attachmentUrl)
+        self.imageUrl = (try? c.decode(String.self, forKey: .imageUrl)) ?? (attType == "image" ? attUrl : nil)
+        self.gifUrl = (try? c.decode(String.self, forKey: .gifUrl)) ?? (attType == "gif" ? attUrl : nil)
+        self.audioUrl = (try? c.decode(String.self, forKey: .audioUrl)) ?? (attType == "voice" ? attUrl : nil)
+        self.audioDurationSeconds = (try? c.decode(Int.self, forKey: .audioDurationSeconds))
+            ?? (try? c.decode(Int.self, forKey: .voiceDurationSec))
+        if let oidStr = try? c.decode(String.self, forKey: .offerId) {
+            self.offerId = oidStr
+        } else if let oidInt = try? c.decode(Int.self, forKey: .offerId) {
+            self.offerId = String(oidInt)
+        } else {
+            self.offerId = nil
+        }
+        self.offerAmount = try? c.decode(Double.self, forKey: .offerAmount)
+        self.offerStatus = try? c.decode(String.self, forKey: .offerStatus)
+        self.sentAtDisplay = (try? c.decode(String.self, forKey: .sentAtDisplay))
+            ?? (try? c.decode(String.self, forKey: .sentAt))
+            ?? "Aujourd'hui"
+        self.isFromMe = (try? c.decode(Bool.self, forKey: .isFromMe)) ?? false
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(conversationId, forKey: .conversationId)
+        try c.encode(listingId, forKey: .listingId)
+        try c.encode(senderUsername, forKey: .senderUsername)
+        try c.encode(senderDisplayName, forKey: .senderDisplayName)
+        try c.encodeIfPresent(senderAvatarUrl, forKey: .senderAvatarUrl)
+        try c.encode(text, forKey: .text)
+        try c.encodeIfPresent(imageUrl, forKey: .imageUrl)
+        try c.encodeIfPresent(gifUrl, forKey: .gifUrl)
+        try c.encodeIfPresent(audioUrl, forKey: .audioUrl)
+        try c.encodeIfPresent(audioDurationSeconds, forKey: .audioDurationSeconds)
+        try c.encodeIfPresent(offerId, forKey: .offerId)
+        try c.encodeIfPresent(offerAmount, forKey: .offerAmount)
+        try c.encodeIfPresent(offerStatus, forKey: .offerStatus)
+        try c.encode(sentAtDisplay, forKey: .sentAtDisplay)
+        try c.encode(isFromMe, forKey: .isFromMe)
+    }
 }
 
 public struct MarketplaceThreadResponse: Codable, Hashable, Sendable {
@@ -520,6 +635,24 @@ public struct MarketplaceThreadResponse: Codable, Hashable, Sendable {
     public var conversationId: String
     public var listing: MarketplaceListing?
     public var messages: [MarketplaceDirectMessage]
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, conversationId, listing, messages
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ok = try? c.decode(Bool.self, forKey: .ok)
+        if let s = try? c.decode(String.self, forKey: .conversationId) {
+            self.conversationId = s
+        } else if let i = try? c.decode(Int.self, forKey: .conversationId) {
+            self.conversationId = String(i)
+        } else {
+            self.conversationId = "0"
+        }
+        self.listing = try? c.decode(MarketplaceListing.self, forKey: .listing)
+        self.messages = (try? c.decode([MarketplaceDirectMessage].self, forKey: .messages)) ?? []
+    }
 }
 
 // MARK: - Commandes & Achats Marketplace (PayPal, Apple Pay, UPS & Viple Taker)
@@ -547,6 +680,147 @@ public struct MarketplaceOrder: Identifiable, Codable, Hashable, Sendable {
     public var vipleDeliveryBarcode: String
     public var status: String
     public var createdAtDisplay: String
+
+    public init(
+        id: String,
+        orderNumber: String,
+        listingId: String,
+        listingTitle: String,
+        listingPhoto: String,
+        category: String,
+        buyerUsername: String,
+        sellerUsername: String,
+        itemPrice: Double,
+        livriaCommission: Double,
+        shippingFee: Double,
+        totalPaid: Double,
+        paymentMethod: String,
+        deliveryMode: String,
+        relayId: String?,
+        relayName: String?,
+        relayAddress: String?,
+        isVipleTakerRelay: Bool,
+        upsTrackingNumber: String,
+        vipleDeliveryBarcode: String,
+        status: String,
+        createdAtDisplay: String
+    ) {
+        self.id = id
+        self.orderNumber = orderNumber
+        self.listingId = listingId
+        self.listingTitle = listingTitle
+        self.listingPhoto = listingPhoto
+        self.category = category
+        self.buyerUsername = buyerUsername
+        self.sellerUsername = sellerUsername
+        self.itemPrice = itemPrice
+        self.livriaCommission = livriaCommission
+        self.shippingFee = shippingFee
+        self.totalPaid = totalPaid
+        self.paymentMethod = paymentMethod
+        self.deliveryMode = deliveryMode
+        self.relayId = relayId
+        self.relayName = relayName
+        self.relayAddress = relayAddress
+        self.isVipleTakerRelay = isVipleTakerRelay
+        self.upsTrackingNumber = upsTrackingNumber
+        self.vipleDeliveryBarcode = vipleDeliveryBarcode
+        self.status = status
+        self.createdAtDisplay = createdAtDisplay
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, orderNumber, reference, listingId, listingTitle
+        case listingPhoto, listingPhotoUrl, category, listingCategory
+        case buyerUsername, buyerDisplayName, sellerUsername, sellerDisplayName
+        case itemPrice, livriaCommission, shippingFee, totalPaid
+        case paymentMethod, deliveryMode, carrier
+        case relayId, relayName, relayAddress, relayOrAddressSummary, isVipleTakerRelay
+        case upsTrackingNumber, trackingNumber, vipleDeliveryBarcode, status, createdAtDisplay
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let s = try? c.decode(String.self, forKey: .id) {
+            self.id = s
+        } else if let i = try? c.decode(Int.self, forKey: .id) {
+            self.id = String(i)
+        } else {
+            self.id = UUID().uuidString
+        }
+        self.orderNumber = (try? c.decode(String.self, forKey: .orderNumber))
+            ?? (try? c.decode(String.self, forKey: .reference))
+            ?? "#MKT-\(self.id)"
+        if let s = try? c.decode(String.self, forKey: .listingId) {
+            self.listingId = s
+        } else if let i = try? c.decode(Int.self, forKey: .listingId) {
+            self.listingId = String(i)
+        } else {
+            self.listingId = "0"
+        }
+        self.listingTitle = (try? c.decode(String.self, forKey: .listingTitle)) ?? "Commande Livria"
+        self.listingPhoto = (try? c.decode(String.self, forKey: .listingPhoto))
+            ?? (try? c.decode(String.self, forKey: .listingPhotoUrl))
+            ?? ""
+        self.category = (try? c.decode(String.self, forKey: .category))
+            ?? (try? c.decode(String.self, forKey: .listingCategory))
+            ?? "books"
+        self.buyerUsername = (try? c.decode(String.self, forKey: .buyerUsername))
+            ?? (try? c.decode(String.self, forKey: .buyerDisplayName))
+            ?? ""
+        self.sellerUsername = (try? c.decode(String.self, forKey: .sellerUsername))
+            ?? (try? c.decode(String.self, forKey: .sellerDisplayName))
+            ?? ""
+        let price = (try? c.decode(Double.self, forKey: .itemPrice)) ?? 0.0
+        self.itemPrice = price
+        let comm = (try? c.decode(Double.self, forKey: .livriaCommission)) ?? 1.00
+        self.livriaCommission = comm
+        self.shippingFee = (try? c.decode(Double.self, forKey: .shippingFee)) ?? 0.00
+        self.totalPaid = (try? c.decode(Double.self, forKey: .totalPaid)) ?? (price + comm)
+        self.paymentMethod = (try? c.decode(String.self, forKey: .paymentMethod)) ?? "Apple Pay"
+        let mode = (try? c.decode(String.self, forKey: .deliveryMode))
+            ?? (try? c.decode(String.self, forKey: .carrier))
+            ?? "Point Relais UPS / Viple Taker"
+        self.deliveryMode = mode
+        self.relayId = try? c.decode(String.self, forKey: .relayId)
+        let rSummary = try? c.decode(String.self, forKey: .relayOrAddressSummary)
+        self.relayName = (try? c.decode(String.self, forKey: .relayName)) ?? rSummary
+        self.relayAddress = (try? c.decode(String.self, forKey: .relayAddress)) ?? rSummary
+        self.isVipleTakerRelay = (try? c.decode(Bool.self, forKey: .isVipleTakerRelay))
+            ?? mode.localizedCaseInsensitiveContains("Taker")
+        self.upsTrackingNumber = (try? c.decode(String.self, forKey: .upsTrackingNumber))
+            ?? (try? c.decode(String.self, forKey: .trackingNumber))
+            ?? ""
+        self.vipleDeliveryBarcode = (try? c.decode(String.self, forKey: .vipleDeliveryBarcode)) ?? ""
+        self.status = (try? c.decode(String.self, forKey: .status)) ?? "Confirmée"
+        self.createdAtDisplay = (try? c.decode(String.self, forKey: .createdAtDisplay)) ?? "Aujourd'hui"
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(orderNumber, forKey: .orderNumber)
+        try c.encode(listingId, forKey: .listingId)
+        try c.encode(listingTitle, forKey: .listingTitle)
+        try c.encode(listingPhoto, forKey: .listingPhoto)
+        try c.encode(category, forKey: .category)
+        try c.encode(buyerUsername, forKey: .buyerUsername)
+        try c.encode(sellerUsername, forKey: .sellerUsername)
+        try c.encode(itemPrice, forKey: .itemPrice)
+        try c.encode(livriaCommission, forKey: .livriaCommission)
+        try c.encode(shippingFee, forKey: .shippingFee)
+        try c.encode(totalPaid, forKey: .totalPaid)
+        try c.encode(paymentMethod, forKey: .paymentMethod)
+        try c.encode(deliveryMode, forKey: .deliveryMode)
+        try c.encodeIfPresent(relayId, forKey: .relayId)
+        try c.encodeIfPresent(relayName, forKey: .relayName)
+        try c.encodeIfPresent(relayAddress, forKey: .relayAddress)
+        try c.encode(isVipleTakerRelay, forKey: .isVipleTakerRelay)
+        try c.encode(upsTrackingNumber, forKey: .upsTrackingNumber)
+        try c.encode(vipleDeliveryBarcode, forKey: .vipleDeliveryBarcode)
+        try c.encode(status, forKey: .status)
+        try c.encode(createdAtDisplay, forKey: .createdAtDisplay)
+    }
 }
 
 // MARK: - Points Relais UPS & Viple Taker (Particuliers & Commerces — 1,00 € / colis)
@@ -568,7 +842,88 @@ public struct MarketplaceRelayPoint: Identifiable, Codable, Hashable, Sendable {
 
     public var isParticulierTaker: Bool {
         if isVipleTaker == true { return true }
-        return id.hasPrefix("TAKER-") || name.localizedCaseInsensitiveContains("Viple Taker")
+        return id.hasPrefix("TAKER-") || name.localizedCaseInsensitiveContains("Taker")
+    }
+
+    public init(
+        id: String,
+        name: String,
+        address: String,
+        postalCode: String,
+        city: String,
+        distanceKm: Double,
+        openingHours: String,
+        latitude: Double,
+        longitude: Double,
+        isAvailable: Bool,
+        isVipleTaker: Bool?,
+        takerDisplayName: String?,
+        remunerationPerParcel: Double?
+    ) {
+        self.id = id
+        self.name = name
+        self.address = address
+        self.postalCode = postalCode
+        self.city = city
+        self.distanceKm = distanceKm
+        self.openingHours = openingHours
+        self.latitude = latitude
+        self.longitude = longitude
+        self.isAvailable = isAvailable
+        self.isVipleTaker = isVipleTaker
+        self.takerDisplayName = takerDisplayName
+        self.remunerationPerParcel = remunerationPerParcel
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, type, address, postalCode, city, distanceKm, openingHours
+        case latitude, longitude, isAvailable, isActive, isVipleTaker, takerDisplayName, remunerationPerParcel
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let s = try? c.decode(String.self, forKey: .id) {
+            self.id = s
+        } else if let i = try? c.decode(Int.self, forKey: .id) {
+            self.id = "RELAY-\(i)"
+        } else {
+            self.id = UUID().uuidString
+        }
+        let nm = (try? c.decode(String.self, forKey: .name)) ?? "Point Relais"
+        self.name = nm
+        let rType = (try? c.decode(String.self, forKey: .type)) ?? ""
+        self.address = (try? c.decode(String.self, forKey: .address)) ?? ""
+        self.postalCode = (try? c.decode(String.self, forKey: .postalCode)) ?? ""
+        self.city = (try? c.decode(String.self, forKey: .city)) ?? ""
+        self.distanceKm = (try? c.decode(Double.self, forKey: .distanceKm)) ?? 0.8
+        self.openingHours = (try? c.decode(String.self, forKey: .openingHours)) ?? "Lun-Sam 09h00-19h30"
+        self.latitude = (try? c.decode(Double.self, forKey: .latitude)) ?? 48.8566
+        self.longitude = (try? c.decode(Double.self, forKey: .longitude)) ?? 2.3522
+        self.isAvailable = (try? c.decode(Bool.self, forKey: .isAvailable))
+            ?? (try? c.decode(Bool.self, forKey: .isActive))
+            ?? true
+        let isTaker = (try? c.decode(Bool.self, forKey: .isVipleTaker))
+            ?? (nm.localizedCaseInsensitiveContains("Taker") || rType.localizedCaseInsensitiveContains("Taker"))
+        self.isVipleTaker = isTaker
+        self.takerDisplayName = try? c.decode(String.self, forKey: .takerDisplayName)
+        self.remunerationPerParcel = (try? c.decode(Double.self, forKey: .remunerationPerParcel)) ?? 1.00
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(address, forKey: .address)
+        try c.encode(postalCode, forKey: .postalCode)
+        try c.encode(city, forKey: .city)
+        try c.encode(distanceKm, forKey: .distanceKm)
+        try c.encode(openingHours, forKey: .openingHours)
+        try c.encode(latitude, forKey: .latitude)
+        try c.encode(longitude, forKey: .longitude)
+        try c.encode(isAvailable, forKey: .isAvailable)
+        try c.encodeIfPresent(isVipleTaker, forKey: .isVipleTaker)
+        try c.encodeIfPresent(takerDisplayName, forKey: .takerDisplayName)
+        try c.encodeIfPresent(remunerationPerParcel, forKey: .remunerationPerParcel)
     }
 }
 
@@ -600,19 +955,208 @@ public struct MarketplaceVipleTakerApplication: Identifiable, Codable, Hashable,
     public var totalEarnedEuros: Double
     public var createdAt: String
     public var updatedAt: String
+
+    public init(
+        id: String,
+        userId: String,
+        username: String,
+        fullName: String,
+        email: String,
+        phone: String,
+        streetAddress: String,
+        postalCode: String,
+        city: String,
+        availabilityHours: String,
+        storageCapacityParcels: Int,
+        housingType: String,
+        motivation: String,
+        acceptsCharter: Bool,
+        status: String,
+        requestedAdditionalInfo: String?,
+        applicantAdditionalReply: String?,
+        adminComment: String?,
+        relayPointId: String?,
+        loobyTakerCode: String,
+        remunerationPerParcel: Double,
+        parcelsDeliveredCount: Int,
+        totalEarnedEuros: Double,
+        createdAt: String,
+        updatedAt: String
+    ) {
+        self.id = id
+        self.userId = userId
+        self.username = username
+        self.fullName = fullName
+        self.email = email
+        self.phone = phone
+        self.streetAddress = streetAddress
+        self.postalCode = postalCode
+        self.city = city
+        self.availabilityHours = availabilityHours
+        self.storageCapacityParcels = storageCapacityParcels
+        self.housingType = housingType
+        self.motivation = motivation
+        self.acceptsCharter = acceptsCharter
+        self.status = status
+        self.requestedAdditionalInfo = requestedAdditionalInfo
+        self.applicantAdditionalReply = applicantAdditionalReply
+        self.adminComment = adminComment
+        self.relayPointId = relayPointId
+        self.loobyTakerCode = loobyTakerCode
+        self.remunerationPerParcel = remunerationPerParcel
+        self.parcelsDeliveredCount = parcelsDeliveredCount
+        self.totalEarnedEuros = totalEarnedEuros
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, reference, userId, username, displayName, firstName, lastName, fullName
+        case email, phone, streetAddress, address, postalCode, city
+        case availabilityHours, openingHours, storageCapacityParcels, storageCapacity
+        case housingType, motivation, motivationAndAccessNotes, acceptsCharter
+        case status, requestedAdditionalInfo, applicantAdditionalReply, applicantSupplementaryResponse
+        case adminComment, adminNotes, relayPointId, linkedRelayPointId, loobyTakerCode
+        case remunerationPerParcel, commissionPerParcel, parcelsDeliveredCount, totalEarnedEuros
+        case createdAt, createdAtUtc, updatedAt, updatedAtUtc
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let s = try? c.decode(String.self, forKey: .id) {
+            self.id = s
+        } else if let i = try? c.decode(Int.self, forKey: .id) {
+            self.id = String(i)
+        } else {
+            self.id = "1"
+        }
+        if let s = try? c.decode(String.self, forKey: .userId) {
+            self.userId = s
+        } else if let i = try? c.decode(Int.self, forKey: .userId) {
+            self.userId = String(i)
+        } else {
+            self.userId = "0"
+        }
+        let mail = (try? c.decode(String.self, forKey: .email)) ?? ""
+        self.email = mail
+        self.username = (try? c.decode(String.self, forKey: .username))
+            ?? (mail.components(separatedBy: "@").first ?? "membre")
+        let fn = (try? c.decode(String.self, forKey: .firstName)) ?? ""
+        let ln = (try? c.decode(String.self, forKey: .lastName)) ?? ""
+        let combined = "\(fn) \(ln)".trimmingCharacters(in: .whitespaces)
+        self.fullName = (try? c.decode(String.self, forKey: .fullName))
+            ?? (!combined.isEmpty ? combined : ((try? c.decode(String.self, forKey: .displayName)) ?? ""))
+        self.phone = (try? c.decode(String.self, forKey: .phone)) ?? ""
+        self.streetAddress = (try? c.decode(String.self, forKey: .streetAddress))
+            ?? (try? c.decode(String.self, forKey: .address))
+            ?? ""
+        self.postalCode = (try? c.decode(String.self, forKey: .postalCode)) ?? ""
+        self.city = (try? c.decode(String.self, forKey: .city)) ?? ""
+        self.availabilityHours = (try? c.decode(String.self, forKey: .availabilityHours))
+            ?? (try? c.decode(String.self, forKey: .openingHours))
+            ?? "Lun-Sam 17h00-20h30"
+        if let capInt = try? c.decode(Int.self, forKey: .storageCapacityParcels) {
+            self.storageCapacityParcels = capInt
+        } else if let capStr = try? c.decode(String.self, forKey: .storageCapacity) {
+            let digits = capStr.components(separatedBy: CharacterSet.decimalDigits.inverted).compactMap { Int($0) }
+            self.storageCapacityParcels = digits.last ?? 20
+        } else {
+            self.storageCapacityParcels = 20
+        }
+        self.housingType = (try? c.decode(String.self, forKey: .housingType)) ?? "Maison / Rez-de-chaussée"
+        self.motivation = (try? c.decode(String.self, forKey: .motivation))
+            ?? (try? c.decode(String.self, forKey: .motivationAndAccessNotes))
+            ?? ""
+        self.acceptsCharter = (try? c.decode(Bool.self, forKey: .acceptsCharter)) ?? true
+        self.status = (try? c.decode(String.self, forKey: .status)) ?? "Envoyée"
+        let reqInfo = (try? c.decode(String.self, forKey: .requestedAdditionalInfo))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.requestedAdditionalInfo = (reqInfo?.isEmpty == false) ? reqInfo : nil
+        let appReply = ((try? c.decode(String.self, forKey: .applicantAdditionalReply))
+            ?? (try? c.decode(String.self, forKey: .applicantSupplementaryResponse)))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.applicantAdditionalReply = (appReply?.isEmpty == false) ? appReply : nil
+        let adm = ((try? c.decode(String.self, forKey: .adminComment))
+            ?? (try? c.decode(String.self, forKey: .adminNotes)))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.adminComment = (adm?.isEmpty == false) ? adm : nil
+        if let rStr = try? c.decode(String.self, forKey: .relayPointId) {
+            self.relayPointId = rStr
+        } else if let rInt = try? c.decode(Int.self, forKey: .linkedRelayPointId) {
+            self.relayPointId = String(rInt)
+        } else {
+            self.relayPointId = nil
+        }
+        self.loobyTakerCode = (try? c.decode(String.self, forKey: .loobyTakerCode))
+            ?? (try? c.decode(String.self, forKey: .reference))
+            ?? "TAKER-\(self.id)"
+        self.remunerationPerParcel = (try? c.decode(Double.self, forKey: .remunerationPerParcel))
+            ?? (try? c.decode(Double.self, forKey: .commissionPerParcel))
+            ?? 1.00
+        self.parcelsDeliveredCount = (try? c.decode(Int.self, forKey: .parcelsDeliveredCount)) ?? 0
+        self.totalEarnedEuros = (try? c.decode(Double.self, forKey: .totalEarnedEuros)) ?? 0.0
+        self.createdAt = (try? c.decode(String.self, forKey: .createdAt))
+            ?? (try? c.decode(String.self, forKey: .createdAtUtc))
+            ?? ""
+        self.updatedAt = (try? c.decode(String.self, forKey: .updatedAt))
+            ?? (try? c.decode(String.self, forKey: .updatedAtUtc))
+            ?? ""
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(userId, forKey: .userId)
+        try c.encode(username, forKey: .username)
+        try c.encode(fullName, forKey: .fullName)
+        try c.encode(email, forKey: .email)
+        try c.encode(phone, forKey: .phone)
+        try c.encode(streetAddress, forKey: .streetAddress)
+        try c.encode(postalCode, forKey: .postalCode)
+        try c.encode(city, forKey: .city)
+        try c.encode(availabilityHours, forKey: .availabilityHours)
+        try c.encode(storageCapacityParcels, forKey: .storageCapacityParcels)
+        try c.encode(housingType, forKey: .housingType)
+        try c.encode(motivation, forKey: .motivation)
+        try c.encode(acceptsCharter, forKey: .acceptsCharter)
+        try c.encode(status, forKey: .status)
+        try c.encodeIfPresent(requestedAdditionalInfo, forKey: .requestedAdditionalInfo)
+        try c.encodeIfPresent(applicantAdditionalReply, forKey: .applicantAdditionalReply)
+        try c.encodeIfPresent(adminComment, forKey: .adminComment)
+        try c.encodeIfPresent(relayPointId, forKey: .relayPointId)
+        try c.encode(loobyTakerCode, forKey: .loobyTakerCode)
+        try c.encode(remunerationPerParcel, forKey: .remunerationPerParcel)
+        try c.encode(parcelsDeliveredCount, forKey: .parcelsDeliveredCount)
+        try c.encode(totalEarnedEuros, forKey: .totalEarnedEuros)
+        try c.encode(createdAt, forKey: .createdAt)
+        try c.encode(updatedAt, forKey: .updatedAt)
+    }
 }
 
 public struct MarketplaceTakerStatusResponse: Codable, Hashable, Sendable {
     public var ok: Bool
     public var hasApplication: Bool
     public var application: MarketplaceVipleTakerApplication?
+    public var validatedTakerRelays: [MarketplaceRelayPoint]?
     public var message: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, hasApplication, application, validatedTakerRelays, message
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.ok = (try? c.decode(Bool.self, forKey: .ok)) ?? true
+        let app = try? c.decode(MarketplaceVipleTakerApplication.self, forKey: .application)
+        self.application = app
+        self.hasApplication = (try? c.decode(Bool.self, forKey: .hasApplication)) ?? (app != nil)
+        self.validatedTakerRelays = try? c.decode([MarketplaceRelayPoint].self, forKey: .validatedTakerRelays)
+        self.message = try? c.decode(String.self, forKey: .message)
+    }
 }
 
 // MARK: - Profil Utilisateur Viple Live ID & Cross-App SSO
 
 public struct MarketplaceUserProfile: Codable, Hashable, Sendable {
     public var id: String
+    public var cid: String?
     public var username: String
     public var displayName: String
     public var email: String
@@ -629,6 +1173,116 @@ public struct MarketplaceUserProfile: Codable, Hashable, Sendable {
     public var postalCode: String
     public var city: String
     public var walletBalance: Double
+
+    public var numericUserId: Int {
+        Int(id) ?? 0
+    }
+
+    public init(
+        id: String,
+        cid: String? = nil,
+        username: String,
+        displayName: String,
+        email: String,
+        avatarUrl: String?,
+        bio: String,
+        motto: String,
+        level: Int,
+        xp: Int,
+        isLivriaPlus: Bool,
+        firstName: String,
+        lastName: String,
+        phone: String,
+        address: String,
+        postalCode: String,
+        city: String,
+        walletBalance: Double
+    ) {
+        self.id = id
+        self.cid = cid
+        self.username = username
+        self.displayName = displayName
+        self.email = email
+        self.avatarUrl = avatarUrl
+        self.bio = bio
+        self.motto = motto
+        self.level = level
+        self.xp = xp
+        self.isLivriaPlus = isLivriaPlus
+        self.firstName = firstName
+        self.lastName = lastName
+        self.phone = phone
+        self.address = address
+        self.postalCode = postalCode
+        self.city = city
+        self.walletBalance = walletBalance
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, userId, cid, username, displayName, email, avatarUrl
+        case bio, motto, level, xp, isLivriaPlus
+        case firstName, lastName, phone, address, postalCode, city
+        case walletBalance, cashbackBalance
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let strId = try? c.decode(String.self, forKey: .id) {
+            self.id = strId
+        } else if let intId = try? c.decode(Int.self, forKey: .id) {
+            self.id = String(intId)
+        } else if let uIntId = try? c.decode(Int.self, forKey: .userId) {
+            self.id = String(uIntId)
+        } else if let uStrId = try? c.decode(String.self, forKey: .userId) {
+            self.id = uStrId
+        } else {
+            self.id = "0"
+        }
+        self.cid = try? c.decode(String.self, forKey: .cid)
+        let mail = (try? c.decode(String.self, forKey: .email)) ?? ""
+        self.email = mail
+        let rawUsername = (try? c.decode(String.self, forKey: .username))
+            ?? (mail.components(separatedBy: "@").first ?? "membre")
+        self.username = rawUsername.hasPrefix("@") ? String(rawUsername.dropFirst()) : rawUsername
+        self.displayName = (try? c.decode(String.self, forKey: .displayName)) ?? self.username
+        self.avatarUrl = try? c.decode(String.self, forKey: .avatarUrl)
+        self.bio = (try? c.decode(String.self, forKey: .bio)) ?? ""
+        self.motto = (try? c.decode(String.self, forKey: .motto)) ?? ""
+        self.level = (try? c.decode(Int.self, forKey: .level)) ?? 1
+        self.xp = (try? c.decode(Int.self, forKey: .xp)) ?? 0
+        self.isLivriaPlus = (try? c.decode(Bool.self, forKey: .isLivriaPlus)) ?? false
+        self.firstName = (try? c.decode(String.self, forKey: .firstName)) ?? ""
+        self.lastName = (try? c.decode(String.self, forKey: .lastName)) ?? ""
+        self.phone = (try? c.decode(String.self, forKey: .phone)) ?? ""
+        self.address = (try? c.decode(String.self, forKey: .address)) ?? ""
+        self.postalCode = (try? c.decode(String.self, forKey: .postalCode)) ?? ""
+        self.city = (try? c.decode(String.self, forKey: .city)) ?? ""
+        self.walletBalance = (try? c.decode(Double.self, forKey: .walletBalance))
+            ?? (try? c.decode(Double.self, forKey: .cashbackBalance))
+            ?? 0.0
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encodeIfPresent(cid, forKey: .cid)
+        try c.encode(username, forKey: .username)
+        try c.encode(displayName, forKey: .displayName)
+        try c.encode(email, forKey: .email)
+        try c.encodeIfPresent(avatarUrl, forKey: .avatarUrl)
+        try c.encode(bio, forKey: .bio)
+        try c.encode(motto, forKey: .motto)
+        try c.encode(level, forKey: .level)
+        try c.encode(xp, forKey: .xp)
+        try c.encode(isLivriaPlus, forKey: .isLivriaPlus)
+        try c.encode(firstName, forKey: .firstName)
+        try c.encode(lastName, forKey: .lastName)
+        try c.encode(phone, forKey: .phone)
+        try c.encode(address, forKey: .address)
+        try c.encode(postalCode, forKey: .postalCode)
+        try c.encode(city, forKey: .city)
+        try c.encode(walletBalance, forKey: .walletBalance)
+    }
 }
 
 public struct MarketplaceCrossAppDiscoverResponse: Codable, Hashable, Sendable {
@@ -636,6 +1290,27 @@ public struct MarketplaceCrossAppDiscoverResponse: Codable, Hashable, Sendable {
     public let sourceApp: String?
     public let token: String?
     public let user: MarketplaceUserProfile?
+
+    private enum CodingKeys: String, CodingKey {
+        case hasSession, hasDetectedAccount, sourceApp, token, user, account
+    }
+
+    private struct AccountSourceHelper: Decodable {
+        let sourceApp: String?
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.hasSession = (try? c.decode(Bool.self, forKey: .hasSession))
+            ?? (try? c.decode(Bool.self, forKey: .hasDetectedAccount))
+            ?? false
+        self.token = try? c.decode(String.self, forKey: .token)
+        self.user = (try? c.decode(MarketplaceUserProfile.self, forKey: .user))
+            ?? (try? c.decode(MarketplaceUserProfile.self, forKey: .account))
+        let topSource = try? c.decode(String.self, forKey: .sourceApp)
+        let nestedSource = (try? c.decode(AccountSourceHelper.self, forKey: .account))?.sourceApp
+        self.sourceApp = topSource ?? nestedSource ?? "Livria Store"
+    }
 }
 
 public struct MarketplaceAuthResponse: Codable, Hashable, Sendable {
@@ -643,6 +1318,30 @@ public struct MarketplaceAuthResponse: Codable, Hashable, Sendable {
     public var message: String
     public var token: String?
     public var user: MarketplaceUserProfile?
+
+    private enum CodingKeys: String, CodingKey {
+        case ok, success, message, error, token, user
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.success = (try? c.decode(Bool.self, forKey: .ok))
+            ?? (try? c.decode(Bool.self, forKey: .success))
+            ?? false
+        self.message = (try? c.decode(String.self, forKey: .message))
+            ?? (try? c.decode(String.self, forKey: .error))
+            ?? (self.success ? "Connecté à Viple Live ID" : "Identifiants Viple Live ID incorrects.")
+        self.token = try? c.decode(String.self, forKey: .token)
+        self.user = try? c.decode(MarketplaceUserProfile.self, forKey: .user)
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(success, forKey: .success)
+        try c.encode(message, forKey: .message)
+        try c.encodeIfPresent(token, forKey: .token)
+        try c.encodeIfPresent(user, forKey: .user)
+    }
 }
 
 public struct MarketplaceBootstrapResponse: Codable, Hashable, Sendable {
@@ -652,6 +1351,7 @@ public struct MarketplaceBootstrapResponse: Codable, Hashable, Sendable {
     public var commissionLabel: String?
     public var shippingFee: Double?
     public var listings: [MarketplaceListing]
+    public var favoriteListingIds: [Int]
     public var conversations: [MarketplaceConversationPreview]
     public var offers: [MarketplaceOffer]
     public var orders: [MarketplaceOrder]
@@ -662,8 +1362,9 @@ public struct MarketplaceBootstrapResponse: Codable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case maintenanceMode, maintenanceEnabled, maintenanceMessage
         case commissionFee, commissionAmount, commissionLabel, shippingFee
-        case listings, conversations, offers, orders, relayPoints
-        case takerApplication, currentUser
+        case listings, favoriteListingIds, conversations, offers, orders
+        case relayPoints, communityRelays, upsRelays
+        case takerApplication, currentUser, user
     }
 
     public init(from decoder: Decoder) throws {
@@ -677,13 +1378,30 @@ public struct MarketplaceBootstrapResponse: Codable, Hashable, Sendable {
         self.commissionLabel = (try? c.decode(String.self, forKey: .commissionLabel))
             ?? "Garantie et Maintien du service"
         self.shippingFee = (try? c.decode(Double.self, forKey: .shippingFee)) ?? 0.00
-        self.listings = (try? c.decode([MarketplaceListing].self, forKey: .listings)) ?? []
+        let favIds = (try? c.decode([Int].self, forKey: .favoriteListingIds)) ?? []
+        self.favoriteListingIds = favIds
+        var decodedListings = (try? c.decode([MarketplaceListing].self, forKey: .listings)) ?? []
+        if !favIds.isEmpty {
+            let favSet = Set(favIds.map { String($0) })
+            for idx in decodedListings.indices {
+                if favSet.contains(decodedListings[idx].id) {
+                    decodedListings[idx].isFavorited = true
+                }
+            }
+        }
+        self.listings = decodedListings
         self.conversations = (try? c.decode([MarketplaceConversationPreview].self, forKey: .conversations)) ?? []
         self.offers = (try? c.decode([MarketplaceOffer].self, forKey: .offers)) ?? []
         self.orders = (try? c.decode([MarketplaceOrder].self, forKey: .orders)) ?? []
-        self.relayPoints = (try? c.decode([MarketplaceRelayPoint].self, forKey: .relayPoints)) ?? []
+
+        let directRelays = (try? c.decode([MarketplaceRelayPoint].self, forKey: .relayPoints)) ?? []
+        let commRelays = (try? c.decode([MarketplaceRelayPoint].self, forKey: .communityRelays)) ?? []
+        let upsPoints = (try? c.decode([MarketplaceRelayPoint].self, forKey: .upsRelays)) ?? []
+        self.relayPoints = directRelays + commRelays + upsPoints
+
         self.takerApplication = try? c.decode(MarketplaceVipleTakerApplication.self, forKey: .takerApplication)
-        self.currentUser = try? c.decode(MarketplaceUserProfile.self, forKey: .currentUser)
+        self.currentUser = (try? c.decode(MarketplaceUserProfile.self, forKey: .currentUser))
+            ?? (try? c.decode(MarketplaceUserProfile.self, forKey: .user))
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -694,6 +1412,7 @@ public struct MarketplaceBootstrapResponse: Codable, Hashable, Sendable {
         try c.encodeIfPresent(commissionLabel, forKey: .commissionLabel)
         try c.encodeIfPresent(shippingFee, forKey: .shippingFee)
         try c.encode(listings, forKey: .listings)
+        try c.encode(favoriteListingIds, forKey: .favoriteListingIds)
         try c.encode(conversations, forKey: .conversations)
         try c.encode(offers, forKey: .offers)
         try c.encode(orders, forKey: .orders)
@@ -707,6 +1426,26 @@ public struct MarketplaceGifItem: Identifiable, Codable, Hashable, Sendable {
     public var id: String
     public var title: String
     public var url: String
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, url, gifUrl
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = (try? c.decode(String.self, forKey: .id)) ?? UUID().uuidString
+        self.title = (try? c.decode(String.self, forKey: .title)) ?? "GIF"
+        self.url = (try? c.decode(String.self, forKey: .gifUrl))
+            ?? (try? c.decode(String.self, forKey: .url))
+            ?? ""
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(title, forKey: .title)
+        try c.encode(url, forKey: .url)
+    }
 }
 
 public struct MarketplaceISBNLookupResult: Codable, Hashable, Sendable {
