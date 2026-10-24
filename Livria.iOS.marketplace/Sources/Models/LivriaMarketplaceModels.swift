@@ -150,6 +150,7 @@ public struct MarketplaceListing: Identifiable, Codable, Hashable, Sendable {
     public var publisherOrBrand: String?
     public var releaseYear: String?
     public var clothingSize: String?
+    public var sellerUserId: Int
     public var sellerUsername: String
     public var sellerDisplayName: String
     public var sellerAvatarUrl: String?
@@ -190,6 +191,7 @@ public struct MarketplaceListing: Identifiable, Codable, Hashable, Sendable {
         publisherOrBrand: String? = nil,
         releaseYear: String? = nil,
         clothingSize: String? = nil,
+        sellerUserId: Int = 0,
         sellerUsername: String,
         sellerDisplayName: String,
         sellerAvatarUrl: String? = nil,
@@ -221,6 +223,7 @@ public struct MarketplaceListing: Identifiable, Codable, Hashable, Sendable {
         self.publisherOrBrand = publisherOrBrand
         self.releaseYear = releaseYear
         self.clothingSize = clothingSize
+        self.sellerUserId = sellerUserId
         self.sellerUsername = sellerUsername
         self.sellerDisplayName = sellerDisplayName
         self.sellerAvatarUrl = sellerAvatarUrl
@@ -241,7 +244,7 @@ public struct MarketplaceListing: Identifiable, Codable, Hashable, Sendable {
         case price, sellerPrice, originalRetailPrice, livriaCommission, shippingFee
         case photos, photoUrls, isbn, isbnOrBarcode, authorOrArtist, publisherOrBrand, publisherOrLabel
         case releaseYear, publicationYear, clothingSize
-        case sellerUsername, sellerHandle, sellerDisplayName, sellerAvatarUrl, sellerLevel
+        case sellerUserId, sellerUsername, sellerHandle, sellerDisplayName, sellerAvatarUrl, sellerLevel
         case sellerRating, sellerSalesCount, sellerCity, isVipleVerified
         case favoritesCount, likesCount, isFavorited, isSold, allowsOffers, createdAtDisplay
     }
@@ -285,6 +288,13 @@ public struct MarketplaceListing: Identifiable, Codable, Hashable, Sendable {
             self.releaseYear = nil
         }
         self.clothingSize = try? c.decode(String.self, forKey: .clothingSize)
+        if let sUid = try? c.decode(Int.self, forKey: .sellerUserId) {
+            self.sellerUserId = sUid
+        } else if let sUidStr = try? c.decode(String.self, forKey: .sellerUserId), let parsed = Int(sUidStr) {
+            self.sellerUserId = parsed
+        } else {
+            self.sellerUserId = 0
+        }
         let rawHandle = (try? c.decode(String.self, forKey: .sellerUsername))
             ?? (try? c.decode(String.self, forKey: .sellerHandle))
             ?? "membre.livria"
@@ -329,6 +339,7 @@ public struct MarketplaceListing: Identifiable, Codable, Hashable, Sendable {
         try c.encodeIfPresent(publisherOrBrand, forKey: .publisherOrLabel)
         try c.encodeIfPresent(releaseYear, forKey: .releaseYear)
         try c.encodeIfPresent(clothingSize, forKey: .clothingSize)
+        try c.encode(sellerUserId, forKey: .sellerUserId)
         try c.encode(sellerUsername, forKey: .sellerUsername)
         try c.encode(sellerDisplayName, forKey: .sellerDisplayName)
         try c.encodeIfPresent(sellerAvatarUrl, forKey: .sellerAvatarUrl)
