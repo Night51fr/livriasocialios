@@ -367,6 +367,100 @@ public struct MarketplaceOffer: Identifiable, Codable, Hashable, Sendable {
     public var totalWithCommission: Double {
         offeredPrice + livriaCommission
     }
+
+    public init(
+        id: String,
+        listingId: String,
+        listingTitle: String,
+        listingPhoto: String,
+        listingOriginalPrice: Double,
+        buyerUsername: String,
+        buyerDisplayName: String,
+        buyerAvatarUrl: String? = nil,
+        sellerUsername: String,
+        offeredPrice: Double,
+        livriaCommission: Double = 1.00,
+        shippingFee: Double = 0.00,
+        message: String,
+        status: String,
+        createdAtDisplay: String = "À l'instant"
+    ) {
+        self.id = id
+        self.listingId = listingId
+        self.listingTitle = listingTitle
+        self.listingPhoto = listingPhoto
+        self.listingOriginalPrice = listingOriginalPrice
+        self.buyerUsername = buyerUsername
+        self.buyerDisplayName = buyerDisplayName
+        self.buyerAvatarUrl = buyerAvatarUrl
+        self.sellerUsername = sellerUsername
+        self.offeredPrice = offeredPrice
+        self.livriaCommission = livriaCommission
+        self.shippingFee = shippingFee
+        self.message = message
+        self.status = status
+        self.createdAtDisplay = createdAtDisplay
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, listingId, listingTitle, listingPhoto, listingPhotoUrl, listingOriginalPrice, originalPrice
+        case buyerUsername, buyerDisplayName, buyerAvatarUrl, sellerUsername
+        case offeredPrice, livriaCommission, shippingFee, message, status, createdAtDisplay
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let s = try? c.decode(String.self, forKey: .id) {
+            self.id = s
+        } else if let i = try? c.decode(Int.self, forKey: .id) {
+            self.id = String(i)
+        } else {
+            self.id = UUID().uuidString
+        }
+        if let s = try? c.decode(String.self, forKey: .listingId) {
+            self.listingId = s
+        } else if let i = try? c.decode(Int.self, forKey: .listingId) {
+            self.listingId = String(i)
+        } else {
+            self.listingId = "0"
+        }
+        self.listingTitle = (try? c.decode(String.self, forKey: .listingTitle)) ?? "Annonce Livria"
+        self.listingPhoto = (try? c.decode(String.self, forKey: .listingPhoto))
+            ?? (try? c.decode(String.self, forKey: .listingPhotoUrl))
+            ?? ""
+        self.listingOriginalPrice = (try? c.decode(Double.self, forKey: .listingOriginalPrice))
+            ?? (try? c.decode(Double.self, forKey: .originalPrice))
+            ?? 0.0
+        self.buyerUsername = (try? c.decode(String.self, forKey: .buyerUsername)) ?? ""
+        self.buyerDisplayName = (try? c.decode(String.self, forKey: .buyerDisplayName)) ?? "Membre Livria"
+        self.buyerAvatarUrl = try? c.decode(String.self, forKey: .buyerAvatarUrl)
+        self.sellerUsername = (try? c.decode(String.self, forKey: .sellerUsername)) ?? ""
+        self.offeredPrice = (try? c.decode(Double.self, forKey: .offeredPrice)) ?? 0.0
+        self.livriaCommission = (try? c.decode(Double.self, forKey: .livriaCommission)) ?? 1.00
+        self.shippingFee = (try? c.decode(Double.self, forKey: .shippingFee)) ?? 0.00
+        self.message = (try? c.decode(String.self, forKey: .message)) ?? ""
+        self.status = (try? c.decode(String.self, forKey: .status)) ?? "En attente"
+        self.createdAtDisplay = (try? c.decode(String.self, forKey: .createdAtDisplay)) ?? "Aujourd'hui"
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(listingId, forKey: .listingId)
+        try c.encode(listingTitle, forKey: .listingTitle)
+        try c.encode(listingPhoto, forKey: .listingPhoto)
+        try c.encode(listingOriginalPrice, forKey: .listingOriginalPrice)
+        try c.encode(buyerUsername, forKey: .buyerUsername)
+        try c.encode(buyerDisplayName, forKey: .buyerDisplayName)
+        try c.encodeIfPresent(buyerAvatarUrl, forKey: .buyerAvatarUrl)
+        try c.encode(sellerUsername, forKey: .sellerUsername)
+        try c.encode(offeredPrice, forKey: .offeredPrice)
+        try c.encode(livriaCommission, forKey: .livriaCommission)
+        try c.encode(shippingFee, forKey: .shippingFee)
+        try c.encode(message, forKey: .message)
+        try c.encode(status, forKey: .status)
+        try c.encode(createdAtDisplay, forKey: .createdAtDisplay)
+    }
 }
 
 // MARK: - Messagerie Livria Marketplace (En 1er l'Annonce, et juste en dessous en plus petit le Pseudo !)
@@ -1310,6 +1404,14 @@ public struct MarketplaceCrossAppDiscoverResponse: Codable, Hashable, Sendable {
         let topSource = try? c.decode(String.self, forKey: .sourceApp)
         let nestedSource = (try? c.decode(AccountSourceHelper.self, forKey: .account))?.sourceApp
         self.sourceApp = topSource ?? nestedSource ?? "Livria Store"
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(hasSession, forKey: .hasSession)
+        try c.encodeIfPresent(sourceApp, forKey: .sourceApp)
+        try c.encodeIfPresent(token, forKey: .token)
+        try c.encodeIfPresent(user, forKey: .user)
     }
 }
 
