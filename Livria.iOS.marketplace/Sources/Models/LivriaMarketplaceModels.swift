@@ -1385,6 +1385,13 @@ public struct MarketplaceCrossAppDiscoverResponse: Codable, Hashable, Sendable {
     public let token: String?
     public let user: MarketplaceUserProfile?
 
+    public init(hasSession: Bool, sourceApp: String?, token: String?, user: MarketplaceUserProfile?) {
+        self.hasSession = hasSession
+        self.sourceApp = sourceApp
+        self.token = token
+        self.user = user
+    }
+
     private enum CodingKeys: String, CodingKey {
         case hasSession, hasDetectedAccount, sourceApp, token, user, account
     }
@@ -1420,6 +1427,13 @@ public struct MarketplaceAuthResponse: Codable, Hashable, Sendable {
     public var message: String
     public var token: String?
     public var user: MarketplaceUserProfile?
+
+    public init(success: Bool, message: String, token: String?, user: MarketplaceUserProfile?) {
+        self.success = success
+        self.message = message
+        self.token = token
+        self.user = user
+    }
 
     private enum CodingKeys: String, CodingKey {
         case ok, success, message, error, token, user
@@ -1529,6 +1543,12 @@ public struct MarketplaceGifItem: Identifiable, Codable, Hashable, Sendable {
     public var title: String
     public var url: String
 
+    public init(id: String, title: String, url: String) {
+        self.id = id
+        self.title = title
+        self.url = url
+    }
+
     private enum CodingKeys: String, CodingKey {
         case id, title, url, gifUrl
     }
@@ -1561,4 +1581,28 @@ public struct MarketplaceISBNLookupResult: Codable, Hashable, Sendable {
     public var subcategory: String
     public var coverUrl: String
     public var summary: String
+
+    public init(
+        isbn: String,
+        title: String,
+        author: String,
+        publisher: String,
+        releaseYear: String,
+        suggestedPrice: Double,
+        originalRetailPrice: Double,
+        subcategory: String,
+        coverUrl: String,
+        summary: String
+    ) {
+        self.isbn = isbn
+        self.title = title
+        self.author = author
+        self.publisher = publisher
+        self.releaseYear = releaseYear
+        self.suggestedPrice = suggestedPrice
+        self.originalRetailPrice = originalRetailPrice
+        self.subcategory = subcategory
+        self.coverUrl = coverUrl
+        self.summary = summary
+    }
 }
