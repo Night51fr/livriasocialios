@@ -172,7 +172,6 @@ public struct CreateOrEditListingView: View {
             } message: {
                 Text("Votre annonce sera retirée de Livria Marketplace.")
             }
-        }
     }
 
     // MARK: - Barre de Progression des 4 Étapes (1, 2, 3, 4 en haut et mot entier en dessous)

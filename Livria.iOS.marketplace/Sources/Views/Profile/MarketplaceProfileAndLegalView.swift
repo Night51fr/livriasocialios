@@ -111,7 +111,6 @@ public struct MarketplaceProfileView: View {
             } message: {
                 Text("Cette action est irréversible et supprimera votre compte Viple Live ID, vos annonces, vos messages et vos données associées.")
             }
-        }
     }
 
     // MARK: - Accès Rapide sur Livria Marketplace (Livria Store, Livria Social, Les Trocs & Viple Taker)
