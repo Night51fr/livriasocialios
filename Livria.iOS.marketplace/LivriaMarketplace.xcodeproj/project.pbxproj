@@ -1,0 +1,258 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		AA0000010000000000000001 /* Sources */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Sources;
+			sourceTree = "<group>";
+		};
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		AA0000020000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		AA0000030000000000000001 = {
+			isa = PBXGroup;
+			children = (
+				AA0000010000000000000001 /* Sources */,
+				AA0000040000000000000001 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		AA0000040000000000000001 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000050000000000000001 /* LivriaMarketplace.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AA0000060000000000000001 /* LivriaMarketplace */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AA0000070000000000000001 /* Build configuration list for PBXNativeTarget "LivriaMarketplace" */;
+			buildPhases = (
+				AA0000080000000000000001 /* Sources */,
+				AA0000020000000000000001 /* Frameworks */,
+				AA0000090000000000000001 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				AA0000010000000000000001 /* Sources */,
+			);
+			name = LivriaMarketplace;
+			packageProductDependencies = (
+			);
+			productName = LivriaMarketplace;
+			productReference = AA0000050000000000000001 /* LivriaMarketplace.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		AA00000A0000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				ORGANIZATIONNAME = Viple;
+				TargetAttributes = {
+					AA0000060000000000000001 = {
+						CreatedOnToolsVersion = 16.0;
+						SystemCapabilities = {
+							com.apple.SignInWithApple = {
+								enabled = 1;
+							};
+						};
+					};
+				};
+			};
+			buildConfigurationList = AA00000B0000000000000001 /* Build configuration list for PBXProject "LivriaMarketplace" */;
+			developmentRegion = fr;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				fr,
+				Base,
+			);
+			mainGroup = AA0000030000000000000001;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = AA0000040000000000000001 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AA0000060000000000000001 /* LivriaMarketplace */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		AA0000090000000000000001 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		AA0000080000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		AA00000C0000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		AA00000D0000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		AA00000E0000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LivriaMarketplace.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Livria Marketplace";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Livria Marketplace utilise l'appareil photo pour scanner instantanément le code-barres ISBN de vos livres et prendre en photo vos articles à vendre.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Livria Marketplace utilise votre position pour afficher automatiquement les points relais UPS et Viple Taker les plus proches de vous.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Livria Marketplace utilise le microphone pour vous permettre d'envoyer des messages vocaux aux acheteurs et vendeurs dans la messagerie.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Livria Marketplace utilise votre photothèque pour importer et recadrer vos photos d'annonces et votre photo de profil Viple Live ID.";
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations[sdk=*]" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2026.11;
+				PRODUCT_BUNDLE_IDENTIFIER = com.viplenetwork.livriamarketplace;
+				PRODUCT_NAME = "LivriaMarketplace";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		AA00000F0000000000000001 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = LivriaMarketplace.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Livria Marketplace";
+				INFOPLIST_KEY_NSCameraUsageDescription = "Livria Marketplace utilise l'appareil photo pour scanner instantanément le code-barres ISBN de vos livres et prendre en photo vos articles à vendre.";
+				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Livria Marketplace utilise votre position pour afficher automatiquement les points relais UPS et Viple Taker les plus proches de vous.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Livria Marketplace utilise le microphone pour vous permettre d'envoyer des messages vocaux aux acheteurs et vendeurs dans la messagerie.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Livria Marketplace utilise votre photothèque pour importer et recadrer vos photos d'annonces et votre photo de profil Viple Live ID.";
+				"INFOPLIST_KEY_UISupportedInterfaceOrientations[sdk=*]" = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 2026.11;
+				PRODUCT_BUNDLE_IDENTIFIER = com.viplenetwork.livriamarketplace;
+				PRODUCT_NAME = "LivriaMarketplace";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		AA0000070000000000000001 /* Build configuration list for PBXNativeTarget "LivriaMarketplace" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA00000E0000000000000001 /* Debug */,
+				AA00000F0000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AA00000B0000000000000001 /* Build configuration list for PBXProject "LivriaMarketplace" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AA00000C0000000000000001 /* Debug */,
+				AA00000D0000000000000001 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+
+/* Begin PBXFileReference section */
+		AA0000050000000000000001 /* LivriaMarketplace.app */ = {
+			isa = PBXFileReference;
+			explicitFileType = wrapper.application;
+			includeInIndex = 0;
+			path = LivriaMarketplace.app;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+/* End PBXFileReference section */
+
+	};
+	rootObject = AA00000A0000000000000001 /* Project object */;
+}
