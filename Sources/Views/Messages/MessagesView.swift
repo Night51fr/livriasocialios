@@ -229,7 +229,7 @@ public struct MessagesView: View {
                 type: social.currentUser?.pageBackgroundType,
                 value: social.currentUser?.pageBackgroundValue
             )
-            .navigationTitle("Messagerie Riche")
+            .navigationTitle("Messagerie Livria")
             .navigationBarTitleDisplayMode(.inline)
             .refreshable {
                 await social.refreshBootstrap()

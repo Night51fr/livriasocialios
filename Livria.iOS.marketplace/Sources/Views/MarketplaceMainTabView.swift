@@ -370,20 +370,6 @@ public struct MarketplaceSplashLoadingView: View {
                 .padding(.top, 4)
 
                 Spacer()
-
-                VStack(spacing: 4) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "checkmark.shield.fill")
-                            .foregroundStyle(MarketplacePalette.primary)
-                        Text("Édité par la librairie en ligne Livria • Viple Live ID")
-                            .font(.system(size: 12, weight: .bold, design: .rounded))
-                            .foregroundStyle(MarketplacePalette.ink)
-                    }
-                    Text("Commission unique 1,00 € (Garantie et Maintien du service) • Livraison 0,00 €")
-                        .font(.system(size: 11))
-                        .foregroundStyle(MarketplacePalette.inkMuted)
-                }
-                .padding(.bottom, 28)
             }
         }
         .onAppear {
